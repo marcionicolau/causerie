@@ -8,6 +8,13 @@
 
 **Input**: User description: "plan a complete spec to extent llama.cpp to work both CPU/GPU and to enable the build at deployed PC based on simple gpu availability check"
 
+## Clarifications
+
+### Session 2026-11-16
+
+- Q: When a model doesn't fully fit in GPU memory, what should the system do? → A: Partial GPU offload — place as much of the model on GPU as fits, run the rest on CPU; no fit at all falls back to pure CPU.
+- Q: When multiple models are resident at once (fusion mode), should the GPU path apply to each model independently? → A: Per-model policy — every loaded model (default, planner, executor) offloads to the GPU independently; all share GPU memory, each degrades per its own fit.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - GPU Machine Gets Accelerated Inference Automatically (Priority: P1)
@@ -95,8 +102,9 @@ as the active path.
 - GPU is present but its driver/runtime is missing, outdated, or broken →
   the availability check fails cleanly and CPU is used.
 - GPU probe succeeds but model cannot fully reside in GPU memory → system
-  still produces correct output (partial offload or CPU fallback) rather than
-  crashing or corrupting output.
+  uses partial offload (as much of the model on GPU as fits, remainder on
+  CPU); when nothing fits, it runs purely on CPU — never a crash or
+  corrupted output.
 - GPU becomes unavailable between check and model load (driver reset, device
   unplugged on external GPUs) → the load error path reports the failure and
   the next attempt can succeed on CPU.
@@ -115,7 +123,10 @@ as the active path.
 - **FR-002**: The system MUST perform a bounded GPU availability check on the
   deployed machine and record its result before or during model load.
 - **FR-003**: When a usable GPU is detected, the system MUST route model
-  inference through the GPU path by default.
+  inference through the GPU path by default. The policy applies per model
+  load — every resident model (single-mode default and fusion
+  planner/executor alike) offloads to shared GPU memory independently and
+  degrades per its own fit; no role is hard-pinned to CPU.
 - **FR-004**: When no usable GPU is detected — including when the probe fails,
   errors, or reports an unsupported device — the system MUST transparently
   fall back to the existing CPU path.
@@ -129,14 +140,18 @@ as the active path.
   Vulkan-class backend (NVIDIA/AMD/Intel on Linux and Windows) and the Apple
   GPU backend on macOS. Vendor-toolkit stacks (e.g., CUDA-class NVIDIA
   runtimes) are out of scope for the first release.
-- **FR-009**: The GPU availability check MUST be "simple" in the user's sense:
+- **FR-009**: When a model exceeds GPU memory, the system MUST use partial
+  offload — placing as much of the model on the GPU as fits and executing
+  the remainder on CPU — rather than failing the load or silently degrading
+  to pure CPU while capacity remains.
+- **FR-010**: The GPU availability check MUST be "simple" in the user's sense:
   presence-of-capable-device plus probe-load, not a lengthy benchmark; it MUST
   not materially delay startup.
-- **FR-010**: Output produced through the GPU path MUST be usable and coherent
+- **FR-011**: Output produced through the GPU path MUST be usable and coherent
   — token streams, stop conditions, and tool/persona/prompt assembly MUST
   behave identically to the CPU path (small numeric divergence in sampled
   tokens is acceptable; broken output is not).
-- **FR-011**: If GPU initialization or inference fails mid-run, the system
+- **FR-012**: If GPU initialization or inference fails mid-run, the system
   MUST surface an error state to the user rather than corrupting output or
   hanging the turn; a subsequent turn MUST be able to succeed on CPU.
 
