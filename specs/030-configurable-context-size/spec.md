@@ -8,6 +8,13 @@
 
 **Input**: User description: "Let the user choose how much conversation a model can hold (its context size) instead of the fixed 4,096-token ceiling, safely and without changing behaviour for existing users. Origin: spec 002 (`code-oss-host-migration`) of the research repository `marcionicolau/causerie-code-oss`, Phase 1 survey `p1-causerie-survey.md`: long documents and agent planning prompts exceed 4,096 tokens and are rejected or truncated."
 
+## Clarifications
+
+### Session 2026-11-16
+
+- Q: After a size change, reload automatically or at the next load? → A: At the next load, with a one-click "Reload now" button next to the changed value.
+- Q: What if a single new message is longer than the size in effect? → A: Warn before sending, show the size needed, and offer to raise the size or send anyway.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Work with long documents (Priority: P1)
@@ -77,6 +84,7 @@ Saved conversation context (the stored model state that speeds up continuing a c
 - Fusion mode with two models: each model uses its own effective size; the memory warning accounts for both.
 - Persisted value from an older or corrupt settings file: fall back to the default silently.
 - GPU in use (spec 029): memory warnings use whichever memory the model will occupy.
+- A single message larger than the effective size: the user is warned before sending (FR-013) and chooses to raise the size or send anyway.
 - Memory pressure appears only after several turns: the existing error handling applies; this feature does not add mid-chat resizing.
 
 ## Requirements *(mandatory)*
@@ -87,7 +95,8 @@ Saved conversation context (the stored model state that speeds up continuing a c
 - **FR-002**: The default MUST remain 4,096 tokens, so users who change nothing see no behavioural difference after upgrading.
 - **FR-003**: The system MUST accept sizes from 512 tokens up to the model's own maximum, offer common presets (4,096, 8,192, 16,384, 32,768), and reject out-of-range or non-numeric input with a clear message.
 - **FR-004**: The effective size MUST be the smaller of the requested size and the model's trained maximum; when clamped, the user MUST be told which value is in effect.
-- **FR-005**: A changed size MUST take effect the next time the model loads; the interface MUST show when a reload is needed and MUST NOT change the size mid-response.
+- **FR-005**: A changed size MUST take effect the next time the model loads and MUST NOT change mid-response; the interface MUST show when a reload is needed and offer a one-click "Reload now" action next to the changed value. The app MUST NOT reload the model on its own because of a size change.
+- **FR-013**: When the newest message alone is larger than the effective size, the system MUST warn before sending, show the size that would be needed, and offer to raise the size or send anyway; it MUST NOT cut the message silently.
 - **FR-006**: History trimming, saved-context validity checks and any displayed capacity MUST use the effective size.
 - **FR-007**: Before loading with a size above the advisor's recommendation for current free memory, the system MUST warn the user and show the recommendation, and MUST let them proceed.
 - **FR-008**: If a load fails for lack of memory at a non-default size, the system MUST reload at the default size and tell the user; the user MUST NOT be left without a loaded model unexplained.
