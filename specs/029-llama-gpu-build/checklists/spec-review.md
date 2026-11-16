@@ -72,6 +72,58 @@
 - [ ] CHK039 Is per-platform release coverage enumerated, given "Linux x64 first, others as already supported" leaves Windows/macOS timing implicit? [Ambiguity, Spec §Assumptions, §FR-008]
 - [ ] CHK040 Is the eGPU out-of-scope boundary clarified — what does the retained "clean error path" still require? [Clarity, Spec §Assumptions, §Edge Cases]
 
+## Agent Resolution Notes *(advisory — reviewer still decides)*
+
+Where each item stands against the design artifacts. `→` points to the
+resolving evidence; items marked **OPEN** have no artifact resolving them.
+
+| Item | Assessment | Evidence |
+|------|-----------|----------|
+| CHK001 | satisfied → | research.md §R1 + contracts/ffi.md: "usable" = a device enumerated by `lls_probe` (`GGML_BACKEND_DEVICE_TYPE_GPU`/`IGPU`) under Vulkan/Metal; `{"devices":[]}` + exit 0 = no usable GPU |
+| CHK002 | satisfied → | data-model.md `GpuProbeResult.status`: `available`/`unavailable`/`error`/`timeout`/`disabled` + `reason` field |
+| CHK003 | satisfied → | contracts/rpc.md `compute.status` returns `devices{name,backend,freeBytes,totalBytes}` + `active` ComputePath incl. `device` |
+| CHK004 | satisfied → | research.md `fitGpuLayers(fileBytes, nLayer, freeBytes)` + `SAFETY≈0.8`; `lls_gguf_meta` gains `nLayer`/`fileBytes` |
+| CHK005 | satisfied → | plan.md file structure + `verify-artifact.sh` requires `gpu/` payload + `lls_probe` + CPU variants per platform |
+| CHK006 | satisfied → | research.md: probe kicked at app `start()`, awaited at first load, cached per app run; `compute.status` is cache-read-only |
+| CHK007 | satisfied → | research.md: alloc-class load failure → retry-halve; decode-class runtime fault → latch `{status:"error", reason:"runtime fault"}` → subsequent loads CPU |
+| CHK008 | satisfied → | research.md: 900 ms kill timeout (concrete bound inside SC-004's <1 s) |
+| CHK009 | satisfied → | probe spawns async at start; only model load awaits it (bounded 900 ms) — startup path never blocks |
+| CHK010 | satisfied → | research.md: placement unit is **per-layer** via `n_gpu_layers`; vendored `llama.h` has no tensor-level fit (documented alternative) |
+| CHK011 | satisfied → | contracts/rpc.md: `"auto" \| "cpu"` exhaustive; unknown value → `INVALID_PARAMS` |
+| CHK012 | satisfied → | research.md §R1: Vulkan = NVIDIA/AMD/Intel on Linux/Windows, Metal on macOS; CUDA-class explicitly excluded |
+| CHK013 | satisfied → | SC-002 ≥2× is the governing measurable bar; "noticeably faster" is qualitative framing of the same outcome |
+| CHK014 | satisfied → | spec §FR-011 itself defines the line: token streams/stop conditions/tool-persona assembly identical; only numeric sampling divergence tolerated; validation.md records coherent ChatML output on GPU |
+| CHK015 | satisfied → | data-model.md: ComputePath is per model load; surfaced via `model.progress{detail:"ready"}`, `compute.status`, `MetricEntry` |
+| CHK016 | satisfied → | research.md resolves: probe starts async at app start, result awaited (bounded) at load — satisfies both FR-002 and FR-010 |
+| CHK017 | satisfied → | research.md: every slot forwards resolved mode; each degrades per own fit — over-commit resolved by independent retry-halve |
+| CHK018 | satisfied → | FR-006 is additive UI; US2's "exactly as today" governs inference behavior + no GPU errors, not the absence of a status surface |
+| CHK019 | satisfied → | research.md keeps advisor advisory (pre-load fit verdicts); FR-009 fit/offload enforcement lives in the load path — distinct roles, no conflict |
+| CHK020 | partial → | validation.md records the actual matrix (CPU-only Linux, RTX 3060/Vulkan); spec's "100% of test machines" denominator remains informal — reviewer judgment |
+| CHK021 | satisfied → | validation.md + `scripts/bench-gpu.ts`: same model (SmolLM2-1.7B Q4_K_M), same prompt, same machine, GPU vs CPU path |
+| CHK022 | partial → | 900 ms kill bound covers hang/driver-init; multi-GPU enumeration not explicitly bounded but device count doesn't scale the wait |
+| CHK023 | satisfied → | contracts/rpc.md: takes effect on next `model.load`; already-resident models keep their path |
+| CHK024 | partial → | measured +40 MB on linux-x64 (Vulkan payload); Windows/macOS deltas unmeasured — budget holds in principle, numbers pending |
+| CHK025 | satisfied → | acceptance scenarios + validation.md define observable outcomes (chat completes; no GPU-related error surfaced) |
+| CHK026 | satisfied → | per-model independent fit + retry-halve: under combined over-commit each resident degrades per its own fit (FR-003) |
+| CHK027 | satisfied → | research.md: GPU load failure → retry-halve (≤4 attempts) → terminal CPU load, never a hard failure |
+| CHK028 | satisfied → | contracts/ffi.md: nonzero exit/kill/unparseable → "GPU unavailable"; stdout schema-validated; backend strings passed through verbatim (unknown tolerated) |
+| CHK029 | satisfied → | unsupported vendor → not enumerated → `{"devices":[]}` → identical CPU fallback path and UI treatment |
+| CHK030 | satisfied → | research.md: subprocess isolation (crash can't reach app), 900 ms kill, parse-or-unavailable policy |
+| CHK031 | **OPEN** | genuine gap — spec silent on hot-plug; design caches probe per app run so a GPU appearing after start requires an app restart to be detected |
+| CHK032 | partial → | no auto-detection required (numeric divergence tolerated); user recourse exists via FR-007 CPU-only override + FR-012 error surfacing |
+| CHK033 | satisfied → | `SAFETY≈0.8` reserves headroom for KV/compute buffers; residual alloc failures caught by retry-halve |
+| CHK034 | satisfied → | research.md defines probe-latency bound (900 ms) + VRAM reservation policy (0.8 factor); resident overhead = shared VRAM per FR-003 |
+| CHK035 | **OPEN** | not stated anywhere — probe is a local subprocess with no network calls by design, but privacy/security expectations are implicit only |
+| CHK036 | satisfied → | plan.md: builder needs Vulkan SDK toolchain (`glslc`+headers), **not** GPU hardware; `CAUSERIE_GPU=off` opt-out |
+| CHK037 | satisfied → | research.md verified against vendored tree: `GGML_BACKEND_DL` runtime backend loading + `ggml-vulkan`/`ggml-metal` present |
+| CHK038 | partial → | research.md: Vulkan needs only the driver-installed ICD (no toolkit); no minimum driver version pinned |
+| CHK039 | partial → | plan covers all three platforms (Vulkan Linux/Windows, Metal macOS); release timing per platform still implicit per spec Assumptions |
+| CHK040 | satisfied → | disappearance → runtime fault latch → error surfaced, next load CPU — the retained "clean error path" (validation.md confirms behavior) |
+
+**Summary**: 30 satisfied, 7 partial (reviewer judgment), 2 open gaps
+(CHK031 hot-plug detection, CHK035 privacy expectations). None block the
+shipped behavior; both opens are reasonable spec amendments if desired.
+
 ## Notes
 
 - Mark items `[x]` only after review confirms the requirement-quality criterion is satisfied
