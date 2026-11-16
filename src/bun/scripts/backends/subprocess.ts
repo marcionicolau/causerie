@@ -206,8 +206,15 @@ export class SubprocessBackend implements ScriptBackend {
     const respP = new Promise<RunnerResponse>((resolve, reject) => {
       session.waiters.set(id, { resolve, reject });
     });
-    session.proc.stdin.write(line);
-    session.proc.stdin.flush();
+    const stdin = session.proc.stdin;
+    if (!stdin || typeof stdin === "number") {
+      throw new BackendUnavailable(
+        "session-dead",
+        "script session stdin is not a pipe",
+      );
+    }
+    stdin.write(line);
+    stdin.flush();
 
     const timeout = new Promise<never>((_, reject) => {
       const t = setTimeout(() => {
