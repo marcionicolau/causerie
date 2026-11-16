@@ -112,6 +112,9 @@ as the active path.
   check is isolated/bounded so the app still reaches the CPU path.
 - The packaged artifact is deployed to a machine with a GPU of an
   unsupported vendor/API → treated identically to "no usable GPU".
+- A GPU becomes available only after app start (driver finishes
+  installing, eGPU plugged in) → availability is evaluated once per app
+  run; the device is picked up on the next app launch.
 
 ## Requirements *(mandatory)*
 
@@ -203,3 +206,5 @@ as the active path.
   runtime requirement.
 - External/eGPU hot-unplug during a live session is out of scope beyond a
   clean error path.
+- The availability check is purely local — device enumeration makes no
+  network calls and emits no telemetry.

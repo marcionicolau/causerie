@@ -109,20 +109,20 @@ resolving evidence; items marked **OPEN** have no artifact resolving them.
 | CHK028 | satisfied → | contracts/ffi.md: nonzero exit/kill/unparseable → "GPU unavailable"; stdout schema-validated; backend strings passed through verbatim (unknown tolerated) |
 | CHK029 | satisfied → | unsupported vendor → not enumerated → `{"devices":[]}` → identical CPU fallback path and UI treatment |
 | CHK030 | satisfied → | research.md: subprocess isolation (crash can't reach app), 900 ms kill, parse-or-unavailable policy |
-| CHK031 | **OPEN** | genuine gap — spec silent on hot-plug; design caches probe per app run so a GPU appearing after start requires an app restart to be detected |
+| CHK031 | satisfied → | resolved by spec amendment (Edge Cases): availability evaluated once per app run; a GPU appearing after start is picked up on next launch — matches the cached-per-run design |
 | CHK032 | partial → | no auto-detection required (numeric divergence tolerated); user recourse exists via FR-007 CPU-only override + FR-012 error surfacing |
 | CHK033 | satisfied → | `SAFETY≈0.8` reserves headroom for KV/compute buffers; residual alloc failures caught by retry-halve |
 | CHK034 | satisfied → | research.md defines probe-latency bound (900 ms) + VRAM reservation policy (0.8 factor); resident overhead = shared VRAM per FR-003 |
-| CHK035 | **OPEN** | not stated anywhere — probe is a local subprocess with no network calls by design, but privacy/security expectations are implicit only |
+| CHK035 | satisfied → | resolved by spec amendment (Assumptions): "the availability check is purely local — no network calls, no telemetry" |
 | CHK036 | satisfied → | plan.md: builder needs Vulkan SDK toolchain (`glslc`+headers), **not** GPU hardware; `CAUSERIE_GPU=off` opt-out |
 | CHK037 | satisfied → | research.md verified against vendored tree: `GGML_BACKEND_DL` runtime backend loading + `ggml-vulkan`/`ggml-metal` present |
 | CHK038 | partial → | research.md: Vulkan needs only the driver-installed ICD (no toolkit); no minimum driver version pinned |
 | CHK039 | partial → | plan covers all three platforms (Vulkan Linux/Windows, Metal macOS); release timing per platform still implicit per spec Assumptions |
 | CHK040 | satisfied → | disappearance → runtime fault latch → error surfaced, next load CPU — the retained "clean error path" (validation.md confirms behavior) |
 
-**Summary**: 30 satisfied, 7 partial (reviewer judgment), 2 open gaps
-(CHK031 hot-plug detection, CHK035 privacy expectations). None block the
-shipped behavior; both opens are reasonable spec amendments if desired.
+**Summary**: 34 satisfied, 6 partial (reviewer judgment), 0 open gaps.
+The two former opens were closed by spec amendments on 2026-11-16:
+CHK031 (hot-plug edge case added) and CHK035 (local-only assumption added).
 
 ## Notes
 
