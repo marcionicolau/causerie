@@ -46,12 +46,66 @@ settings are local JSON.
   offline degradation, fully disableable (`AI_DESKTOP_APP_UPDATE=off`).
   The feed is the app's only update-network surface — see `docs/updates.md`.
 
-## Requirements
+## Workstation setup
 
-- [Bun](https://bun.sh) (project toolchain is pinned by Hutch)
-- [Hutch](https://github.com/blackrabbit/hutch) CLI on PATH
-- cmake + a C++ toolchain (gcc/clang on Linux/macOS, MSVC on Windows)
-- A GGUF model in `models/` — or download one from the in-app model library
+Everything needed to develop, test, and build. Linux (x64/arm64) and macOS
+are supported natively; Windows uses `scripts/build-native.ps1` (configured,
+not CI-verified — see `docs/packaging.md`).
+
+### Required software
+
+| Tool | Why |
+|------|-----|
+| **git** | clone with submodules — llama.cpp is vendored at `src/native/vendor/llama.cpp` |
+| **[Bun](https://bun.sh) ≥ 1.4** | runtime, package manager, script runner |
+| **cmake + C++ toolchain** | build the llama.cpp FFI shim (`build-native.sh` fails fast naming what's missing) — gcc/clang on Linux/macOS, MSVC or clang-cl on Windows |
+| **Hutch CLI on PATH** | runs `dev`/`build` tasks from `hutch.config.ts` — installed into `~/.hutch/bin` by its own installer (see below) |
+| **zstd** | `scripts/verify-artifact.sh` inspects packaged `Resources/*.tar.zst` bundles |
+| **A GGUF model** in `models/` | run the app; FFI test suites self-skip without one |
+
+Optional but recommended: **ccache** (llama.cpp picks it up automatically via
+`GGML_CCACHE` — much faster native rebuilds) and the
+[**gh** CLI](https://cli.github.com) (`gh-install.sh` installs published
+canary builds; releases are pushed as git tags). A desktop session
+(X11/Wayland) is required for `bun run dev` — the app is a real window.
+
+Package hints: Debian/Ubuntu `sudo apt install cmake build-essential zstd
+ccache`; Fedora `sudo dnf install cmake gcc-c++ zstd ccache`; macOS
+`xcode-select --install && brew install cmake zstd ccache`.
+
+### First-time setup
+
+```bash
+git clone --recurse-submodules <repo-url>   # or: git submodule update --init
+cd causerie
+bun install
+
+# Hutch launcher → ~/.hutch/bin/hutch (paired with the pinned electrobun)
+curl -fsSL https://hutch.blackboard.sh/hutch/install.sh | sh
+export PATH="$HOME/.hutch/bin:$PATH"        # add to your shell profile too
+
+bun x electrobun prepare    # downloads the pinned toolchain into ~/.hutch
+                            # and projects the SDK into .hutch/devkit
+bun run build:native        # cmake → native/out/<platform>/
+```
+
+Optional test/dev model (same one CI caches — enables the FFI suites):
+
+```bash
+mkdir -p models
+curl -fL -o models/SmolLM2-135M-Instruct-Q4_K_M.gguf \
+  https://huggingface.co/bartowski/SmolLM2-135M-Instruct-GGUF/resolve/main/SmolLM2-135M-Instruct-Q4_K_M.gguf
+```
+
+### Verify the setup
+
+```bash
+bun run typecheck && bun run lint && bun test ./tests
+bun run dev                 # opens the app window
+```
+
+Re-run `bun x electrobun prepare` after bumping `electrobun` —
+`.hutch/devkit` is generated and git-ignored.
 
 ## Development
 
