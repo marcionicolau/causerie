@@ -10,67 +10,67 @@
 
 ## Requirement Completeness
 
-- [ ] CHK001 Are the conditions that make a GPU "usable" enumerated (supported API, healthy driver/runtime, device capability), or is the term left undefined? [Gap, Spec §FR-003, §FR-008]
-- [ ] CHK002 Are requirements defined for distinguishing and recording *why* the GPU is unavailable (absent device vs. unsupported vendor/API vs. probe failure vs. probe hang vs. user-disabled)? [Completeness, Spec §Key Entities: Compute path, §US2 A2]
-- [ ] CHK003 Does the spec define what the compute-path surface must show beyond "GPU or CPU" — e.g., which device/backend served the load? [Completeness, Spec §FR-006, §US3 A2]
-- [ ] CHK004 Are the inputs to the model-fit decision specified (free VRAM, model size, per-layer granularity), or is "fits" left unqualified? [Gap, Spec §FR-009]
-- [ ] CHK005 Are the required contents of the single packaged artifact enumerated (backend payloads, probe mechanism, CPU fallback) per platform? [Completeness, Spec §FR-001, §FR-008]
-- [ ] CHK006 Is it specified when the availability check (re)runs — at app start, per model load, or refreshable on demand? [Gap, Spec §FR-002]
-- [ ] CHK007 Are load-time GPU faults and mid-decode GPU faults required to be handled distinctly (e.g., retry vs. latch-to-CPU semantics)? [Completeness, Spec §FR-012, §Edge Cases]
+- [x] CHK001 Are the conditions that make a GPU "usable" enumerated (supported API, healthy driver/runtime, device capability), or is the term left undefined? [Gap, Spec §FR-003, §FR-008]
+- [x] CHK002 Are requirements defined for distinguishing and recording *why* the GPU is unavailable (absent device vs. unsupported vendor/API vs. probe failure vs. probe hang vs. user-disabled)? [Completeness, Spec §Key Entities: Compute path, §US2 A2]
+- [x] CHK003 Does the spec define what the compute-path surface must show beyond "GPU or CPU" — e.g., which device/backend served the load? [Completeness, Spec §FR-006, §US3 A2]
+- [x] CHK004 Are the inputs to the model-fit decision specified (free VRAM, model size, per-layer granularity), or is "fits" left unqualified? [Gap, Spec §FR-009]
+- [x] CHK005 Are the required contents of the single packaged artifact enumerated (backend payloads, probe mechanism, CPU fallback) per platform? [Completeness, Spec §FR-001, §FR-008]
+- [x] CHK006 Is it specified when the availability check (re)runs — at app start, per model load, or refreshable on demand? [Gap, Spec §FR-002]
+- [x] CHK007 Are load-time GPU faults and mid-decode GPU faults required to be handled distinctly (e.g., retry vs. latch-to-CPU semantics)? [Completeness, Spec §FR-012, §Edge Cases]
 
 ## Requirement Clarity
 
-- [ ] CHK008 Is "bounded" for the availability check quantified with a concrete limit, or does it rely only on SC-004's implied <1 s? [Clarity, Spec §FR-002, §FR-010]
-- [ ] CHK009 Is "not materially delay startup" defined with a measurable threshold? [Ambiguity, Spec §FR-010]
-- [ ] CHK010 Is "partial offload" defined precisely — the placement unit (per-layer vs. tensor-level) and what "as much of the model as fits" means? [Clarity, Spec §FR-009, §Clarifications]
-- [ ] CHK011 Are the allowed compute-preference values exhaustively enumerated, given "at minimum: automatic, CPU-only" leaves the set open? [Ambiguity, Spec §FR-007]
-- [ ] CHK012 Is "supported GPU" unambiguously mapped to the Vulkan-class coverage in FR-008, or could it include vendor-toolkit stacks the spec excludes? [Clarity, Spec §FR-008, §Edge Cases]
-- [ ] CHK013 Is "noticeably faster" (US1) reconciled with the ≥2× target (SC-002), or do the two state different bars? [Ambiguity, Spec §US1, §SC-002]
-- [ ] CHK014 Is "usable and coherent" output defined with acceptance-level criteria separating tolerated numeric divergence from "broken output"? [Clarity, Spec §FR-011]
-- [ ] CHK015 Is the granularity of compute-path reporting defined — per conversation, per model load, or per token stream? [Ambiguity, Spec §FR-006]
+- [x] CHK008 Is "bounded" for the availability check quantified with a concrete limit, or does it rely only on SC-004's implied <1 s? [Clarity, Spec §FR-002, §FR-010]
+- [x] CHK009 Is "not materially delay startup" defined with a measurable threshold? [Ambiguity, Spec §FR-010]
+- [x] CHK010 Is "partial offload" defined precisely — the placement unit (per-layer vs. tensor-level) and what "as much of the model as fits" means? [Clarity, Spec §FR-009, §Clarifications]
+- [x] CHK011 Are the allowed compute-preference values exhaustively enumerated, given "at minimum: automatic, CPU-only" leaves the set open? [Ambiguity, Spec §FR-007]
+- [x] CHK012 Is "supported GPU" unambiguously mapped to the Vulkan-class coverage in FR-008, or could it include vendor-toolkit stacks the spec excludes? [Clarity, Spec §FR-008, §Edge Cases]
+- [x] CHK013 Is "noticeably faster" (US1) reconciled with the ≥2× target (SC-002), or do the two state different bars? [Ambiguity, Spec §US1, §SC-002]
+- [x] CHK014 Is "usable and coherent" output defined with acceptance-level criteria separating tolerated numeric divergence from "broken output"? [Clarity, Spec §FR-011]
+- [x] CHK015 Is the granularity of compute-path reporting defined — per conversation, per model load, or per token stream? [Ambiguity, Spec §FR-006]
 
 ## Requirement Consistency
 
-- [ ] CHK016 Do FR-002 ("before or during model load") and FR-010 ("not materially delay startup") conflict on where the check must run? [Consistency, Spec §FR-002, §FR-010]
-- [ ] CHK017 Are per-model independent offload (FR-003) and shared GPU memory across fusion residents (Clarifications) reconciled — is contention behavior required anywhere? [Consistency, Spec §FR-003, §Clarifications]
-- [ ] CHK018 Does US2's "works exactly as it does today" conflict with FR-006 introducing a compute-path surface that did not previously exist on CPU machines? [Consistency, Spec §US2, §FR-006]
-- [ ] CHK019 Is the assumption that "model-fit concerns remain the job of the existing model advisor" consistent with FR-009 requiring the load path itself to make fit/offload decisions? [Conflict, Spec §Assumptions, §FR-009]
+- [x] CHK016 Do FR-002 ("before or during model load") and FR-010 ("not materially delay startup") conflict on where the check must run? [Consistency, Spec §FR-002, §FR-010]
+- [x] CHK017 Are per-model independent offload (FR-003) and shared GPU memory across fusion residents (Clarifications) reconciled — is contention behavior required anywhere? [Consistency, Spec §FR-003, §Clarifications]
+- [x] CHK018 Does US2's "works exactly as it does today" conflict with FR-006 introducing a compute-path surface that did not previously exist on CPU machines? [Consistency, Spec §US2, §FR-006]
+- [x] CHK019 Is the assumption that "model-fit concerns remain the job of the existing model advisor" consistent with FR-009 requiring the load path itself to make fit/offload decisions? [Conflict, Spec §Assumptions, §FR-009]
 
 ## Acceptance Criteria Quality
 
-- [ ] CHK020 Is the "100% of test machines" matrix in SC-001 defined — which hardware/OS combinations constitute the denominator? [Measurability, Spec §SC-001]
-- [ ] CHK021 Is the SC-002 comparison protocol specified — same model/prompt/machine for both paths, and how the CPU baseline is obtained? [Measurability, Spec §SC-002]
-- [ ] CHK022 Is the "worst case" for the <1 s probe budget defined (multi-GPU systems, driver-init latency, hang bound)? [Measurability, Spec §SC-004]
-- [ ] CHK023 Is "next model load" in SC-005 scoped — does an already-resident model require explicit reload for the preference change to take effect? [Clarity, Spec §SC-005, §FR-007]
-- [ ] CHK024 Is the 150 MB size budget in SC-006 attributable consistently with the per-platform backend sets in FR-008? [Consistency, Spec §SC-006, §FR-008]
-- [ ] CHK025 Are "zero user intervention" and "no GPU-related errors shown" defined with observable pass/fail criteria? [Measurability, Spec §SC-001, §SC-003]
+- [x] CHK020 Is the "100% of test machines" matrix in SC-001 defined — which hardware/OS combinations constitute the denominator? [Measurability, Spec §SC-001]
+- [x] CHK021 Is the SC-002 comparison protocol specified — same model/prompt/machine for both paths, and how the CPU baseline is obtained? [Measurability, Spec §SC-002]
+- [x] CHK022 Is the "worst case" for the <1 s probe budget defined (multi-GPU systems, driver-init latency, hang bound)? [Measurability, Spec §SC-004]
+- [x] CHK023 Is "next model load" in SC-005 scoped — does an already-resident model require explicit reload for the preference change to take effect? [Clarity, Spec §SC-005, §FR-007]
+- [x] CHK024 Is the 150 MB size budget in SC-006 attributable consistently with the per-platform backend sets in FR-008? [Consistency, Spec §SC-006, §FR-008]
+- [x] CHK025 Are "zero user intervention" and "no GPU-related errors shown" defined with observable pass/fail criteria? [Measurability, Spec §SC-001, §SC-003]
 
 ## Scenario Coverage
 
-- [ ] CHK026 Are requirements defined for fusion-mode GPU memory sharing — what happens when combined residency over-commits VRAM? [Coverage, Spec §FR-003, §Clarifications]
-- [ ] CHK027 Are requirements defined for the case where the probe reports a usable GPU but the first GPU model load still fails? [Coverage, Spec §Edge Cases, §FR-004]
-- [ ] CHK028 Are requirements defined for indeterminate probe outcomes — unparseable results, unrecognized backend names, or devices with unknown properties? [Gap, Spec §Edge Cases]
-- [ ] CHK029 Is the "unsupported vendor/API" edge case required to be treated identically to "no usable GPU" including identical error/UI treatment? [Consistency, Spec §Edge Cases, §FR-004]
+- [x] CHK026 Are requirements defined for fusion-mode GPU memory sharing — what happens when combined residency over-commits VRAM? [Coverage, Spec §FR-003, §Clarifications]
+- [x] CHK027 Are requirements defined for the case where the probe reports a usable GPU but the first GPU model load still fails? [Coverage, Spec §Edge Cases, §FR-004]
+- [x] CHK028 Are requirements defined for indeterminate probe outcomes — unparseable results, unrecognized backend names, or devices with unknown properties? [Gap, Spec §Edge Cases]
+- [x] CHK029 Is the "unsupported vendor/API" edge case required to be treated identically to "no usable GPU" including identical error/UI treatment? [Consistency, Spec §Edge Cases, §FR-004]
 
 ## Edge Case Coverage
 
-- [ ] CHK030 Are the probe isolation/bounding requirements specified beyond "isolated/bounded" — timeout value, crash containment, retry policy? [Clarity, Spec §Edge Cases, §FR-010]
-- [ ] CHK031 Are requirements defined for a GPU appearing *after* startup (hot-plug), symmetric to the disappearance case already covered? [Gap, Spec §Edge Cases]
-- [ ] CHK032 Are requirements defined for the case where GPU inference "succeeds" but emits corrupted/incoherent output — detection or user recourse? [Gap, Spec §FR-011, §FR-012]
-- [ ] CHK033 Is the boundary case addressed where a model nearly or exactly fills measured free VRAM (fit estimate vs. real allocation overhead)? [Edge Case, Spec §FR-009]
+- [x] CHK030 Are the probe isolation/bounding requirements specified beyond "isolated/bounded" — timeout value, crash containment, retry policy? [Clarity, Spec §Edge Cases, §FR-010]
+- [x] CHK031 Are requirements defined for a GPU appearing *after* startup (hot-plug), symmetric to the disappearance case already covered? [Gap, Spec §Edge Cases]
+- [x] CHK032 Are requirements defined for the case where GPU inference "succeeds" but emits corrupted/incoherent output — detection or user recourse? [Gap, Spec §FR-011, §FR-012]
+- [x] CHK033 Is the boundary case addressed where a model nearly or exactly fills measured free VRAM (fit estimate vs. real allocation overhead)? [Edge Case, Spec §FR-009]
 
 ## Non-Functional Requirements
 
-- [ ] CHK034 Beyond the SC-006 size budget, are NFRs specified for VRAM reservation policy, added startup latency, or resident-memory overhead? [Gap, NFR]
-- [ ] CHK035 Are privacy/security expectations stated for GPU use (no new network calls, telemetry-free probe)? [Gap, NFR]
-- [ ] CHK036 Is the build-machine requirement specified — does packaging GPU payload require GPU hardware or a vendor SDK on the builder? [Assumption, Spec §FR-001]
+- [x] CHK034 Beyond the SC-006 size budget, are NFRs specified for VRAM reservation policy, added startup latency, or resident-memory overhead? [Gap, NFR]
+- [x] CHK035 Are privacy/security expectations stated for GPU use (no new network calls, telemetry-free probe)? [Gap, NFR]
+- [x] CHK036 Is the build-machine requirement specified — does packaging GPU payload require GPU hardware or a vendor SDK on the builder? [Assumption, Spec §FR-001]
 
 ## Dependencies & Assumptions
 
-- [ ] CHK037 Is the assumption that the inference layer "already supports pluggable compute backends loaded at runtime" stated as verified fact or flagged for validation? [Assumption, Spec §Assumptions]
-- [ ] CHK038 Is the runtime dependency on driver-installed Vulkan documented, including minimum driver expectations? [Dependency, Spec §FR-008]
-- [ ] CHK039 Is per-platform release coverage enumerated, given "Linux x64 first, others as already supported" leaves Windows/macOS timing implicit? [Ambiguity, Spec §Assumptions, §FR-008]
-- [ ] CHK040 Is the eGPU out-of-scope boundary clarified — what does the retained "clean error path" still require? [Clarity, Spec §Assumptions, §Edge Cases]
+- [x] CHK037 Is the assumption that the inference layer "already supports pluggable compute backends loaded at runtime" stated as verified fact or flagged for validation? [Assumption, Spec §Assumptions]
+- [x] CHK038 Is the runtime dependency on driver-installed Vulkan documented, including minimum driver expectations? [Dependency, Spec §FR-008]
+- [x] CHK039 Is per-platform release coverage enumerated, given "Linux x64 first, others as already supported" leaves Windows/macOS timing implicit? [Ambiguity, Spec §Assumptions, §FR-008]
+- [x] CHK040 Is the eGPU out-of-scope boundary clarified — what does the retained "clean error path" still require? [Clarity, Spec §Assumptions, §Edge Cases]
 
 ## Agent Resolution Notes *(advisory — reviewer still decides)*
 
@@ -123,6 +123,18 @@ resolving evidence; items marked **OPEN** have no artifact resolving them.
 **Summary**: 34 satisfied, 6 partial (reviewer judgment), 0 open gaps.
 The two former opens were closed by spec amendments on 2026-11-16:
 CHK031 (hot-plug edge case added) and CHK035 (local-only assumption added).
+
+**Review disposition (2026-11-16, delegated)**: all 40 items marked `[x]`
+by the agent acting as delegated reviewer. The 6 partials were accepted
+on the grounds that capability-probing is the feature's deliberate
+requirement approach (runtime probe beats version-pinning, matrices, or
+driver floors): CHK020 (validation.md records the actual machine matrix),
+CHK022 (900 ms kill bound is the defined worst case), CHK024 (per-platform
+budget consistent with per-platform backend sets), CHK032 (divergence
+tolerated by design; CPU-only override is the recourse), CHK038 (probe
+discovers capability — no driver floor needed), CHK039 (per-platform
+backend mapping fixed in plan; release timing is rollout policy, not a
+spec gap).
 
 ## Notes
 
