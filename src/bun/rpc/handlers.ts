@@ -925,7 +925,9 @@ export function createRequestHandlers(deps: HandlerDeps) {
       deps.emit("model.progress", { phase: "loading", detail: "benchmarking" });
       try {
         const prev = deps.store.getSettings().activeModelPath;
-        const record = await runBenchmark(deps.engine, path, prev ?? null);
+        const record = await runBenchmark(deps.engine, path, prev ?? null, {
+          computeMode: deps.store.getSettings().computeMode,
+        });
         deps.emit("model.progress", {
           phase: "ready",
           detail: "benchmark complete",
@@ -2130,8 +2132,16 @@ async function bootstrapModel(emit: Emit): Promise<void> {
   if (!path) return;
   emit("model.progress", { phase: "loading" });
   try {
-    const res = await engine.loadModel(path);
-    emit("model.progress", { phase: "ready", detail: res.name });
+    // feature 029: preference resolved at load time (SC-005) — a
+    // persisted "cpu" must govern the startup/restore load too
+    const res = await engine.loadModel(path, {
+      computeMode: store.getSettings().computeMode,
+    });
+    emit("model.progress", {
+      phase: "ready",
+      detail: res.name,
+      compute: res.compute,
+    });
   } catch (e) {
     emit("model.progress", {
       phase: "error",

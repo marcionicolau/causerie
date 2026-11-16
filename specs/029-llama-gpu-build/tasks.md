@@ -120,3 +120,8 @@ Phase 1 (Setup)  ─►  Phase 2 (Foundational)  ─►  Phase 3 (US1)
 **MVP = Phase 1 + 2 + 3 (US1)** — the packaged artifact auto-accelerates on GPU machines and safely degrades; US2's hardening rides along since the fallback paths land in the same files. US3 is a thin surface layer on top.
 
 Feature-004 gotcha applies: `chat.send`/registry call sites must pass `computeMode` at *load* time, not cache it at handler init — a stale mode would ignore a mid-session preference change (SC-005).
+
+## Phase 7: Convergence
+
+- [x] T027 Pass `computeMode` from settings into `bootstrapModel`'s `engine.loadModel(path)` and stamp `compute` on its `model.progress` ready payload — the persisted preference currently ignored on startup/restore loads (src/bun/rpc/handlers.ts) per FR-007/SC-005/T014 (partial)
+- [x] T028 Widen `BenchEngine.loadModel` to accept `{computeMode}` and forward `settings.computeMode` for both the target load and the restore load in `runBenchmark` + the `model.benchmark` call site — "CPU only" preference must govern benchmark/restore loads (src/bun/advisor/benchmark.ts, src/bun/rpc/handlers.ts) per FR-007/US3 (partial)
