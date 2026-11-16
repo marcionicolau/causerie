@@ -1,24 +1,25 @@
 # Validation Record: Portable CPU/GPU Inference Build
 
-Quickstart S1–S7 run on the implementation machine (Linux x86_64, no
-Vulkan SDK → `CAUSERIE_GPU=off` build exercises the CPU-only degrade path).
+Quickstart S1–S7 run on the implementation machine (Fedora 44, RTX 3060
+12 GB, driver 620.70.06, Vulkan ICD 1.4.357 + `vulkan-loader`).
 
 ## Quickstart
 
-- [x] S1 native build — `CAUSERIE_GPU=off ./scripts/build-native.sh` →
-  25 staged artifacts incl. `lls_probe`; prereq check correctly names the
-  Vulkan SDK when `CAUSERIE_GPU` is unset
+- [x] S1 native build — `./scripts/build-native.sh` (glslc + vulkan-headers
+  + spirv-headers installed) → 26 staged artifacts incl. `lls_probe` and
+  `gpu/libggml-vulkan.so` (40 MB); prereq check names the Vulkan SDK when
+  `CAUSERIE_GPU` is unset; `CAUSERIE_GPU=off` builds CPU-only (25 artifacts)
 - [x] S2 probe smoke — `./native/out/linux-x64/lls_probe native/out/linux-x64/gpu`
-  → `{"devices":[]}` exit 0 (no `gpu/` dir → clean empty result, stderr
-  noise from ggml is ignored by the spawn runner)
-- [x] S3 `bun test ./tests` — 656 pass / 0 fail (incl. new
+  → `{"devices":[{"name":"Vulkan0","backend":"Vulkan","freeBytes":12273516544,"totalBytes":13142851584}]}`
+  in **0.72 s** (< 900 ms cap, SC-004)
+- [x] S3 `bun test ./tests` — 656 pass / 0 fail (incl.
   `tests/llama/gpu-fit`, `tests/llama/gpu-probe`, `tests/rpc/compute`)
-- [x] S4 GPU-machine load+chat — **hardware-conditional: not executed
-  here** (no GPU/Vulkan on this machine); covered by unit-level
-  load-path logic + `lls_model_gpu_info` reporting
-- [x] S5 CPU-only degrade — `engine.loadModel(model, {computeMode:"auto"})`
-  on the CPU-only build → `{status:"ready", compute:{mode:"cpu"}}`;
-  `compute.status` → `unavailable`; zero GPU errors surfaced
+- [x] S4 GPU load + chat — `loadModel(..., {computeMode:"auto"})` →
+  `compute:{mode:"gpu-full",device:"Vulkan0",gpuLayers:24,layersTotal:24}`
+  (SmolLM2-1.7B); ChatML-wrapped generation streams coherent output
+  (FR-011: "Photosynthesis is the process by which plants...")
+- [x] S5 CPU-only degrade — verified on the earlier `CAUSERIE_GPU=off`
+  staging: `unavailable` status, zero GPU errors, `{mode:"cpu"}` loads
 - [x] S6 preference + continuity — `settings.set {computeMode:"cpu"}` →
   `compute.status` = `disabled`, `devices:[]`, no probe spawn; KV
   snapshots are backend-agnostic state blobs — a snapshot written under
@@ -27,18 +28,23 @@ Vulkan SDK → `CAUSERIE_GPU=off` build exercises the CPU-only degrade path).
 - [x] S7 typecheck/lint/build — `tsc --noEmit` clean; `oxlint` no new
   warnings; `vite build` ✓
 
-## SC-006 artifact size delta
+## SC-002 decode throughput — MEASURED (T025)
 
-- CPU-only staging (`CAUSERIE_GPU=off`): `native/out/linux-x64` = **39 MB**
-  (unchanged vs pre-feature; `lls_probe` adds < 0.5 MB)
-- GPU payload (not buildable here — no Vulkan SDK): expected
-  `gpu/libggml-vulkan.so` ~8–15 MB per llama.cpp release norms → total
-  delta ≈ **10–15 MB**, well inside the 150 MB budget
-- To be confirmed on the packaging CI machine which has the Vulkan SDK.
+Same model + prompt on both paths, warmup + measured run
+(`scripts/bench-gpu.ts`):
 
-## SC-002 decode throughput (T025)
+| Model | CPU | GPU (Vulkan, RTX 3060) | Speedup |
+|---|---|---|---|
+| SmolLM2-135M Q4_K_M | 216.0 tok/s | 328.5 tok/s (gpu-full, 30/30 layers) | 1.52× |
+| **SmolLM2-1.7B Q4_K_M** | **34.0 tok/s** | **146.9 tok/s (gpu-full, 24/24 layers)** | **4.3×** |
 
-**Hardware-conditional — deferred.** Requires a discrete-GPU machine with
-the Vulkan SDK. Procedure: same model + prompt, `metrics.list`
-elapsedMs/outputTokens under `compute:"gpu-*"` vs `computeMode:"cpu"`;
-target ≥2× tok/s on a mid-range discrete GPU.
+The ≥2× target holds on the representative model — the 135M dev fixture
+understates GPU scaling (host loop dominates at tiny sizes). GPU output
+verified coherent (FR-011).
+
+## SC-006 artifact size delta — MEASURED
+
+- CPU-only staging (`CAUSERIE_GPU=off`): 39 MB (unchanged baseline)
+- GPU staging: 79 MB — `gpu/libggml-vulkan.so` = **40 MB** + `lls_probe`
+- **Delta ≈ +40 MB per platform — inside the 150 MB budget (SC-006)**
+  (Vulkan embeds all generated shaders; Metal on macOS will differ)
