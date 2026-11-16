@@ -337,10 +337,12 @@ int lls_step(lls_ctx * c, char * buf, size_t cap, size_t * out_len) {
     const int32_t len = llama_token_to_piece(c->vocab, c->cur, buf,
                                              (int32_t) cap, /* lstrip */ 0,
                                              /* special */ false);
-    if (len <= 0) {
+    if (len < 0) {
         // token did not fit in buf or failed to convert
         return -1;
     }
+    // len == 0 for suppressed control/unknown tokens: no bytes to emit,
+    // still decode and sample the next token below
     *out_len = (size_t) len;
 
     if (c->pos >= (int32_t) llama_n_ctx(c->handle)) {

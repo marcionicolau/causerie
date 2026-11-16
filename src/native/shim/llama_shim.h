@@ -84,7 +84,8 @@ LLS_API int lls_generate_continue(lls_ctx * c, const char * prompt,
 // token count for text (special tokens included); <= 0 on error
 LLS_API int32_t lls_token_count(lls_ctx * c, const char * text);
 
-// 1 = token written to buf (out_len = byte count), 0 = done, <0 = error
+// 1 = token decoded (out_len = byte count; may be 0 for suppressed
+// control/unknown tokens), 0 = done, <0 = error
 LLS_API int lls_step(lls_ctx * c, char * buf, size_t cap, size_t * out_len);
 
 // releases generation state; idempotent; NULL-safe
