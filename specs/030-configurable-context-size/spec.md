@@ -93,7 +93,7 @@ Saved conversation context (the stored model state that speeds up continuing a c
 
 - **FR-001**: The system MUST let the user set a context size as a global default and as an optional per-model override; a per-model value takes precedence.
 - **FR-002**: The default MUST remain 4,096 tokens, so users who change nothing see no behavioural difference after upgrading.
-- **FR-003**: The system MUST accept sizes from 512 tokens up to the model's own maximum, offer common presets (4,096, 8,192, 16,384, 32,768), and reject out-of-range or non-numeric input with a clear message.
+- **FR-003**: The system MUST accept sizes from 512 tokens up to the model's own maximum (and never above 1,048,576), offer common presets (4,096, 8,192, 16,384, 32,768), and reject out-of-range or non-numeric input with a clear message.
 - **FR-004**: The effective size MUST be the smaller of the requested size and the model's trained maximum; when clamped, the user MUST be told which value is in effect.
 - **FR-005**: A changed size MUST take effect the next time the model loads and MUST NOT change mid-response; the interface MUST show when a reload is needed and offer a one-click "Reload now" action next to the changed value. The app MUST NOT reload the model on its own because of a size change.
 - **FR-013**: When the newest message alone is larger than the effective size, the system MUST warn before sending, show the size that would be needed, and offer to raise the size or send anyway; it MUST NOT cut the message silently.

@@ -47,7 +47,7 @@ description: "Task list for spec 030 — configurable context size"
 - [ ] T016 [US2] Memory-failure recovery in `src/bun/llama/engine.ts`: on allocation failure at a non-default size retry once at 4096 and return `fallback: { reason: "memory" }`; never retry at 4096; test with an injected failing creator in `tests/engine-fallback.test.ts`
 - [ ] T017 [US2] Pre-send check in `src/bun/rpc/handlers.ts` (`chat.send`): if the newest message's `engine.tokenCount` exceeds the effective size minus a small reserve, return `message_exceeds_context` with `neededTokens`; accept `force: true`
 - [ ] T018 [P] [US2] Renderer dialog for the oversize message (raise size / send anyway) in `src/renderer/src/features/chat/` and RPC client use in `src/shared/rpc-contract.ts`
-- [ ] T019 [US2] Tests for warning thresholds, fallback and the preflight result in `tests/context-safety.test.ts`; run quickstart Q4, Q5, Q8
+- [ ] T019 [US2] Tests for warning thresholds, fallback and the preflight result in `tests/context-safety.test.ts`; also cover a size change requested while a response is generating (applies at next load, nothing changes mid-response); run quickstart Q4, Q5, Q8
 
 ---
 
@@ -75,7 +75,7 @@ description: "Task list for spec 030 — configurable context size"
 
 - [ ] T026 [P] Show the effective size of each loaded model in the model/performance view (`src/renderer/src/features/metrics/` or `models/`) (FR-009)
 - [ ] T027 [P] Add the module to the `AGENTS.md` module map and a short note in the model settings docs
-- [ ] T028 Run `bun run typecheck`, `bun run lint`, `bun test ./tests`, and quickstart Q1–Q9; link results in the PR
+- [ ] T028 Run `bun run typecheck`, `bun run lint`, `bun test ./tests`, and quickstart Q1–Q9; confirm no network calls were added (FR-012); link results in the PR
 
 ---
 
