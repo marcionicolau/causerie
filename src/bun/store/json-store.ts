@@ -27,6 +27,7 @@ const DEFAULT_SETTINGS: Settings = {
   generation: DEFAULT_GENERATION,
   modelOverrides: {},
   tags: [],
+  computeMode: "auto", // feature 029
 };
 
 function newTag(name: string, label: string, description: string): ModelTag {

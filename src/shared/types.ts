@@ -213,6 +213,42 @@ export interface Settings {
   // feature 013: update preferences; undefined → {enabled:true,
   // channel:<installed>} — AI_DESKTOP_APP_UPDATE=off forces enabled=false
   updates?: UpdatesPrefs;
+  // feature 029: compute selection; undefined/absent → "auto"
+  computeMode?: ComputeMode;
+}
+
+// ---- feature 029: CPU/GPU compute path ----
+
+// persisted preference: "auto" = probe + GPU when usable; "cpu" = never
+// touch GPU code paths
+export type ComputeMode = "auto" | "cpu";
+
+export interface GpuDeviceInfo {
+  name: string; // ggml device name
+  backend: string; // registry name verbatim — "vulkan"|"metal" today
+  freeBytes: number;
+  totalBytes: number;
+}
+
+export type GpuProbeStatus =
+  | "available"
+  | "unavailable"
+  | "error"
+  | "timeout"
+  | "disabled"; // computeMode === "cpu" — probe never spawned
+
+export interface GpuProbeResult {
+  status: GpuProbeStatus;
+  devices: GpuDeviceInfo[]; // [] unless status === "available"
+  reason?: string; // why not available
+}
+
+// which compute path served a given model load
+export interface ComputePath {
+  mode: "cpu" | "gpu-full" | "gpu-partial";
+  device?: string; // GPU device name when gpu-*
+  gpuLayers?: number;
+  layersTotal?: number;
 }
 
 // ---- feature 013: auto-update ----
@@ -521,6 +557,9 @@ export interface MetricEntry {
   status: "complete" | "partial" | "failed";
   fallback?: boolean;
   promptPreview: string; // ≤120 chars, single line
+  // feature 029: which compute path served this call (FR-006 surface)
+  compute?: ComputePath["mode"];
+  device?: string;
 }
 
 // feature 010: disk bounds for persisted KV state

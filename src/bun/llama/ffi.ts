@@ -25,16 +25,27 @@ function libSuffix(): string {
 
 function candidates(): string[] {
   const name = `lib${LIB_BASENAME}${libSuffix()}`;
+  return nativeDirs().map((d) => join(d, name));
+}
+
+// feature 029: native staging dirs in probe order — lls_probe and the
+// gpu/ backend subdir resolve from the same candidates as the shim
+function nativeDirs(): string[] {
   const plat = platformDir();
   const list: string[] = [];
   if (process.env.LLAMA_NATIVE_DIR) {
-    list.push(join(process.env.LLAMA_NATIVE_DIR, name));
+    list.push(process.env.LLAMA_NATIVE_DIR);
   }
   // dev layout: native/out/<platform>/ relative to repo root
-  list.push(resolve(process.cwd(), "native", "out", plat, name));
+  list.push(resolve(process.cwd(), "native", "out", plat));
   // packaged layout: <exe>/../Resources/app/native/<platform>/
-  list.push(resolve(process.execPath, "..", "..", "Resources", "app", "native", plat, name));
+  list.push(resolve(process.execPath, "..", "..", "Resources", "app", "native", plat));
   return list;
+}
+
+// first existing native dir — used to spawn lls_probe at app init
+export function resolveNativeDir(): string | null {
+  return nativeDirs().find((d) => existsSync(join(d, `lib${LIB_BASENAME}${libSuffix()}`))) ?? null;
 }
 
 export interface LlamaShimSymbols {
@@ -68,6 +79,10 @@ export interface LlamaShimSymbols {
   // feature 010: absent on stale shims — snapshot layer no-ops then
   lls_state_save?(ctx: number, path: string, err: number): number;
   lls_state_load?(ctx: number, path: string, err: number): number;
+  // feature 029: absent on stale shims — GPU layer reports unavailable
+  lls_backend_init_gpu?(dir: string): void;
+  lls_model_load2?(path: string, nGpuLayers: number, err: number): number;
+  lls_model_gpu_info?(model: number, err: number): number | null;
 }
 
 export type LlamaShim = ReturnType<typeof loadLlamaShim>;
@@ -122,13 +137,35 @@ export function loadLlamaShim() {
       returns: FFIType.i32,
     },
   } as const;
+  // feature 029: GPU offload entry points; a shim that has the state
+  // symbols but not these still keeps snapshots — the GPU layer then
+  // reports "unavailable (stale shim)"
+  const gpuSyms = {
+    lls_backend_init_gpu: {
+      args: [FFIType.cstring],
+      returns: FFIType.void,
+    },
+    lls_model_load2: {
+      args: [FFIType.cstring, FFIType.i32, FFIType.ptr],
+      returns: FFIType.ptr,
+    },
+    lls_model_gpu_info: {
+      args: [FFIType.ptr, FFIType.ptr],
+      returns: FFIType.ptr,
+    },
+  } as const;
   let lib: ReturnType<typeof dlopen>;
   let hasInit = false;
   try {
-    lib = dlopen(libPath, { ...base, ...stateSyms });
+    lib = dlopen(libPath, { ...base, ...stateSyms, ...gpuSyms });
     hasInit = true;
   } catch {
-    lib = dlopen(libPath, base);
+    try {
+      lib = dlopen(libPath, { ...base, ...stateSyms });
+      hasInit = true;
+    } catch {
+      lib = dlopen(libPath, base);
+    }
   }
   if (hasInit) {
     // variant libs sit next to libllama_shim — point ggml at that dir

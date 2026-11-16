@@ -142,6 +142,13 @@ export function OutputPanel({ open }: { open: boolean }) {
                           fallback
                         </span>
                       )}
+                      {/* feature 029: which compute path served the call */}
+                      {e.compute && e.compute !== "cpu" && (
+                        <span className="shrink-0 rounded bg-accent px-1 text-2xs text-accent-foreground">
+                          {e.compute === "gpu-full" ? "GPU" : "GPU·partial"}
+                          {e.device ? ` ${e.device}` : ""}
+                        </span>
+                      )}
                       {e.status === "failed" ? (
                         <span className="shrink-0 text-destructive">failed</span>
                       ) : (

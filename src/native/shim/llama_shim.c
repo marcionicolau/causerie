@@ -13,6 +13,8 @@
 
 struct lls_model {
     struct llama_model * handle;
+    int32_t gpu_layers; // feature 029: effective GPU-layer request (0 = CPU)
+    char gpu_device[64]; // serving GPU name when gpu_layers > 0, else ""
 };
 
 struct lls_ctx {
@@ -69,11 +71,45 @@ static void ensure_backend(void) {
     lls_backend_init(NULL);
 }
 
+// feature 029: GPU-class backend libs live in a gpu/ SUBDIR so the flat
+// CPU scan above never touches them. Only called after the external
+// lls_probe process reported a usable device — keeps driver crashes out
+// of the app unless the user is actually on the GPU path.
+static int gpu_backend_ready = 0;
+
+void lls_backend_init_gpu(const char * dir) {
+    if (gpu_backend_ready) return;
+    ensure_backend();
+    if (dir != NULL && dir[0] != '\0') {
+        ggml_backend_load_all_from_path(dir);
+    }
+    gpu_backend_ready = 1;
+}
+
+// first registered GPU-type device, or NULL
+static ggml_backend_dev_t first_gpu_dev(void) {
+    const size_t n = ggml_backend_dev_count();
+    for (size_t i = 0; i < n; i++) {
+        ggml_backend_dev_t d = ggml_backend_dev_get(i);
+        const enum ggml_backend_dev_type t = ggml_backend_dev_type(d);
+        if (t == GGML_BACKEND_DEVICE_TYPE_GPU ||
+            t == GGML_BACKEND_DEVICE_TYPE_IGPU) {
+            return d;
+        }
+    }
+    return NULL;
+}
+
 const char * lls_version(void) {
     return LLS_VERSION;
 }
 
 lls_model * lls_model_load(const char * path, char ** err) {
+    return lls_model_load2(path, 0, err);
+}
+
+lls_model * lls_model_load2(const char * path, int32_t n_gpu_layers,
+                            char ** err) {
     if (path == NULL || path[0] == '\0') {
         set_err(err, "model path is empty");
         return NULL;
@@ -81,6 +117,7 @@ lls_model * lls_model_load(const char * path, char ** err) {
     ensure_backend();
 
     struct llama_model_params mparams = llama_model_default_params();
+    mparams.n_gpu_layers = n_gpu_layers;
     struct llama_model * handle = llama_model_load_from_file(path, mparams);
     if (handle == NULL) {
         set_err(err, "failed to load model file");
@@ -94,7 +131,47 @@ lls_model * lls_model_load(const char * path, char ** err) {
         return NULL;
     }
     m->handle = handle;
+    // record the effective offload: request clamped to the real layer
+    // count when a GPU device is registered (llama assigns the first
+    // n_gpu_layers to GPU buffer types; none land there without a device)
+    if (n_gpu_layers != 0) {
+        ggml_backend_dev_t dev = first_gpu_dev();
+        if (dev != NULL) {
+            const int32_t total = llama_model_n_layer(handle);
+            m->gpu_layers =
+                n_gpu_layers < 0 || n_gpu_layers > total
+                    ? total
+                    : n_gpu_layers;
+            const char * name = ggml_backend_dev_name(dev);
+            snprintf(m->gpu_device, sizeof(m->gpu_device), "%s",
+                     name != NULL ? name : "");
+        }
+    }
     return m;
+}
+
+char * lls_model_gpu_info(lls_model * m, char ** err) {
+    if (m == NULL || m->handle == NULL) {
+        set_err(err, "model is NULL");
+        return NULL;
+    }
+    const int32_t total = llama_model_n_layer(m->handle);
+    const size_t cap = 160 + sizeof(m->gpu_device);
+    char * out = (char *) malloc(cap);
+    if (out == NULL) {
+        set_err(err, "out of memory");
+        return NULL;
+    }
+    if (m->gpu_layers > 0) {
+        snprintf(out, cap,
+                 "{\"gpuLayers\":%d,\"layersTotal\":%d,\"device\":\"%s\"}",
+                 m->gpu_layers, total, m->gpu_device);
+    } else {
+        snprintf(out, cap,
+                 "{\"gpuLayers\":0,\"layersTotal\":%d,\"device\":null}",
+                 total);
+    }
+    return out;
 }
 
 void lls_model_free(lls_model * m) {
@@ -475,6 +552,18 @@ char * lls_gguf_meta(const char * path, char ** err) {
     uint32_t ftype = 0;
     uint32_t ctx_len = 0;
     int has_ftype = 0, has_ctx = 0;
+    // feature 029: layer count + file size feed the GPU fit estimate
+    uint32_t n_layer = 0;
+    int has_layer = 0;
+    uint64_t file_bytes = 0;
+    {
+        long sz = -1;
+        if (fseek(f, 0, SEEK_END) == 0) {
+            sz = ftell(f);
+        }
+        rewind(f);
+        if (sz > 0) file_bytes = (uint64_t) sz;
+    }
 
     char magic[4];
     uint32_t version = 0;
@@ -527,6 +616,16 @@ char * lls_gguf_meta(const char * path, char ** err) {
                     }
                 }
             }
+        } else if (strstr(key, ".block_count") != NULL &&
+                   (type == 4 || type == 10)) {
+            uint64_t v = 0;
+            uint32_t v32 = 0;
+            const int ok = type == 4 ? (rd_u32(f, &v32), v = v32, 0)
+                                     : rd_u64(f, &v);
+            if (ok == 0 && v <= 0x7fffffff && !has_layer) {
+                n_layer = (uint32_t) v;
+                has_layer = 1;
+            }
         } else if (strstr(key, ".context_length") != NULL &&
                    (type == 4 || type == 10)) {
             uint64_t v = 0;
@@ -552,7 +651,8 @@ char * lls_gguf_meta(const char * path, char ** err) {
 
     {
         // cap: fixed skeleton + 2x each string for escaping
-        const size_t cap = 256 + 2 * ((name ? strlen(name) : 0) +
+        // (+64 headroom for the feature-029 nLayer/fileBytes fields)
+        const size_t cap = 320 + 2 * ((name ? strlen(name) : 0) +
                                       (arch ? strlen(arch) : 0) +
                                       (params ? strlen(params) : 0));
         char * out = (char *) malloc(cap);
@@ -579,10 +679,23 @@ char * lls_gguf_meta(const char * path, char ** err) {
         }
         if (has_ctx) {
             snprintf(d, cap - (size_t) (d - out),
-                     ",\"contextTrain\":%u}", ctx_len);
+                     ",\"contextTrain\":%u", ctx_len);
+            d += strlen(d);
         } else {
-            memcpy(d, ",\"contextTrain\":null}", 22); // 21 chars + NUL
+            memcpy(d, ",\"contextTrain\":null", 20);
+            d += 20;
         }
+        // feature 029: additive fields — nLayer feeds GPU fit math,
+        // fileBytes the per-layer size estimate (0 when ftell failed)
+        if (has_layer) {
+            d += snprintf(d, cap - (size_t) (d - out),
+                          ",\"nLayer\":%u", n_layer);
+        } else {
+            memcpy(d, ",\"nLayer\":null", 13);
+            d += 13;
+        }
+        snprintf(d, cap - (size_t) (d - out),
+                 ",\"fileBytes\":%llu}", (unsigned long long) file_bytes);
         free(name);
         free(arch);
         free(params);

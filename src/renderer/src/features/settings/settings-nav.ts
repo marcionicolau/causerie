@@ -22,6 +22,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     label: "Application",
     items: [
       { id: "settings-updates", label: "Updates" },
+      { id: "settings-compute", label: "Compute" },
       { id: "settings-layout", label: "Layout" },
       { id: "settings-shortcuts", label: "Keyboard shortcuts" },
     ],

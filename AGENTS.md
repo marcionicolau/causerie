@@ -605,3 +605,44 @@ draft-side; `MessageList` renders `Message.attachments` chips (`·trunc` /
   asserts control/hit minimums + reduced-motion collapse.
 - 800 × 600 is a tested floor, not enforced — Electrobun has no
   min-window-size API (`docs/window-size.md`, R7).
+
+## Feature 029 — portable CPU/GPU inference
+
+- `llama/gpu.ts` — probe orchestration + fit math, pure seams injectable.
+  `startProbe(shimDir)` spawns `lls_probe <gpuDir>` (900 ms kill cap,
+  SC-004), memoized per run; `awaitProbe(budget)` bounded-awaits the
+  shared result; `reportRuntimeFault()` latches `error` (FR-012);
+  `noteStaleShim()` when the shim lacks GPU symbols. `fitGpuLayers` =
+  `min(nLayer, floor(free×0.8/(file/nLayer)))`, `nLayer==null` → `-1`;
+  `halveLayers(-1)` → 32 midpoint. `resolveMode` is the auto/cpu truth
+  table.
+- Shim: `lls_backend_init_gpu(dir)` (idempotent, probes `gpu/` subdir
+  only — `lls_backend_init` never sees GPU libs), `lls_model_load2(path,
+  n_gpu_layers)` (`0`=CPU, `N`=partial, `-1`=all), `lls_model_gpu_info`
+  → `{gpuLayers,layersTotal,device}` (recorded at load — ggml has no
+  post-hoc offload query); `lls_gguf_meta` gained `nLayer`+`fileBytes`.
+- `lls_probe` = separate executable beside the shim: crash-isolated
+  device enumeration (driver faults can't take the app down); iterates
+  ggml **registries→devices** so `backend` = `ggml_backend_reg_name`
+  verbatim; prints one JSON line, always exit 0 on success.
+- Build/stage: `GGML_VULKAN` on for Linux/Windows (`CAUSERIE_GPU=off`
+  opts out, skips the `glslc` prereq); Metal needs nothing on macOS.
+  `stage-native.ts` routes `*ggml-vulkan/metal/opencl*` into `gpu/`;
+  `verify-artifact.sh` hard-requires `lls_probe` + the gpu/ payload.
+- Engine `loadModel(path, {computeMode})`: resolved at call time (never
+  cached — SC-005); auto+available → `lls_backend_init_gpu` +
+  `lls_model_load2(fit)`, retry-halving any load2 failure ≤4 attempts
+  (terminal n=0 = today's CPU path); GPU-path `lls_step` failure →
+  `reportRuntimeFault`. Registry forwards `computeMode` per slot — each
+  resident model resolves policy independently (FR-003).
+- RPC: `compute.status` (cached only, never synchronously probes; lazy
+  kick on first call covers a mid-session cpu→auto toggle),
+  `settings.get/set {computeMode:"auto"|"cpu"}`, `model.progress` gains
+  `compute`, `MetricEntry` gains `compute`/`device`. `start()` skips the
+  probe entirely under `computeMode:"cpu"` → status `disabled`.
+- Renderer: `features/settings/ComputeSettings.tsx` (Auto/CPU-only
+  select + device/status/last-path badges, `settings-compute` nav id);
+  `OutputPanel` GPU/GPU·partial badge per metric row.
+
+Gotcha: bun:ffi NULL returns are `null`, not `0` — always test truthiness
+(`if (model)`), never `!== 0`.

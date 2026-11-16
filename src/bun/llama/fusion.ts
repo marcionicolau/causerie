@@ -4,6 +4,7 @@
 // when both roles bind the same file (FR-011). Single-flight semantics
 // are unchanged: the whole turn is one run under the ENGINE_BUSY gate.
 import type {
+  ComputeMode,
   FusionPhase,
   GenerationParams,
   MessageStats,
@@ -44,6 +45,9 @@ export interface FusionTurnOpts {
   // feature 016 (FR-003): one entry per phase call; the caller fills
   // personaName and gates on the outputPanel setting
   onMetric?: (e: Omit<MetricEntry, "id" | "ts" | "personaName">) => void;
+  // feature 029: forwarded into registry.acquire so planner/executor
+  // slots resolve the GPU/CPU policy independently (FR-003)
+  computeMode?: ComputeMode;
   // feature 015 (FR-009): the executor's answer phase runs through the
   // tool loop; the planner's output is never scanned for calls
   tools?: {
@@ -237,7 +241,9 @@ export async function runFusionTurn(
       const t0 = performance.now();
       try {
         // oxlint-disable-next-line no-await-in-loop -- sequential candidate cascade
-        slot = await o.registry.acquire(role.path);
+        slot = await o.registry.acquire(role.path, {
+          computeMode: o.computeMode,
+        });
         o.registry.pin(slot.path, o.conversationId);
         o.onEvent("chat.phase", phaseEvent(phase, role));
         const onTok = (d: string) => {
@@ -285,6 +291,9 @@ export async function runFusionTurn(
           status: res.status,
           fallback: role.servedBy.kind === "fallback" || undefined,
           promptPreview,
+          // feature 029: compute path that served this phase
+          compute: slot?.engine.computePath?.()?.mode,
+          device: slot?.engine.computePath?.()?.device,
         });
         return { role, res, content };
       } catch (e) {
@@ -303,6 +312,9 @@ export async function runFusionTurn(
           status: "failed",
           fallback: role.servedBy.kind === "fallback" || undefined,
           promptPreview,
+          // feature 029
+          compute: slot?.engine.computePath?.()?.mode,
+          device: slot?.engine.computePath?.()?.device,
         });
         if (emitted) throw e; // mid-stream failure: retrying duplicates output
         // fall through to next candidate

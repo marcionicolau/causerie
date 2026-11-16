@@ -59,6 +59,23 @@ missing=()
 if   present "libllama_shim" || present "llama_shim"; then :; else missing+=("llama_shim"); fi
 if   present "libllama"      || present "llama";      then :; else missing+=("llama"); fi
 if   present "libggml"       || present "ggml";       then :; else missing+=("ggml"); fi
+# feature 029 (FR-008): the crash-isolated probe binary + the platform
+# GPU backend under gpu/ are part of every shipped artifact
+if [ -n "$listing" ]; then
+  echo "$listing" | grep -q "native/$plat/lls_probe" || missing+=("lls_probe")
+else
+  { [ -f "$plat_dir/lls_probe" ] || [ -f "$plat_dir/lls_probe.exe" ]; } \
+    || missing+=("lls_probe")
+fi
+gpu_pat="ggml-vulkan"
+[ "${plat#darwin-}" != "$plat" ] && gpu_pat="ggml-metal"
+if [ -n "$listing" ]; then
+  echo "$listing" | grep -q "native/$plat/gpu/.*${gpu_pat}.*${ext}" \
+    || missing+=("gpu/${gpu_pat}")
+else
+  find "$plat_dir/gpu" -name "*${gpu_pat}*.${ext}" 2>/dev/null | grep -q . \
+    || missing+=("gpu/${gpu_pat}")
+fi
 # runtime CPU dispatch ships one libggml-cpu-<variant> per ISA (GGML_CPU_ALL_VARIANTS);
 # a monolithic libggml-cpu alone means the build regressed to -march=native (SIGILL off-host)
 if [ -n "$listing" ]; then

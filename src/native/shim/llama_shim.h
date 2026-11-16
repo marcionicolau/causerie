@@ -40,6 +40,31 @@ LLS_API const char * lls_version(void);
 // NULL on failure; err is set and must be freed via lls_free_string
 LLS_API lls_model * lls_model_load(const char * path, char ** err);
 
+// feature 029: like lls_model_load but offloads n_gpu_layers layers to
+// GPU devices registered by lls_backend_init_gpu.
+//   0 = CPU only (identical to lls_model_load);
+//   N > 0 = first N layers on GPU, remainder on CPU;
+//   -1 = all layers on GPU (llama clamps to the real layer count; used
+//        when the GGUF block_count is unavailable).
+// With no GPU backend registered this still works — n_gpu_layers is a
+// no-op and the load is CPU. NULL on failure; err is set.
+LLS_API lls_model * lls_model_load2(const char * path,
+                                    int32_t n_gpu_layers, char ** err);
+
+// shim-allocated JSON describing where the model landed:
+//   {"gpuLayers":<int>, "layersTotal":<int>, "device":<string|null>}
+// gpuLayers is the effective request clamped to the model's layer count
+// when a GPU device is registered (llama assigns the first N layers to
+// GPU buffer types); device is that GPU's ggml device name, else null.
+// Free via lls_free_string either way. NULL on failure (err is set).
+LLS_API char * lls_model_gpu_info(lls_model * m, char ** err);
+
+// feature 029: probes GPU-class ggml backends (vulkan/metal/…) from dir —
+// the gpu/ subdirectory beside the shim, NOT the flat dir
+// lls_backend_init scans. Call only after a successful external probe;
+// later calls and NULL dirs are handled (no-op).
+LLS_API void lls_backend_init_gpu(const char * dir);
+
 // NULL-safe; must be called after all contexts are freed
 LLS_API void lls_model_free(lls_model * m);
 
