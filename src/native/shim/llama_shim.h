@@ -68,7 +68,10 @@ LLS_API void lls_backend_init_gpu(const char * dir);
 // NULL-safe; must be called after all contexts are freed
 LLS_API void lls_model_free(lls_model * m);
 
-// one active context per model; NULL on failure, err is set
+// one active context per model; NULL on failure, err is set.
+// n_ctx == 0 -> 4096; effective = min(n_ctx, trained maximum) when the
+// model reports one (feature 030, contracts/ffi.md)
+LLS_API lls_ctx * lls_ctx_create_ex(lls_model * m, uint32_t n_ctx, char ** err);
 LLS_API lls_ctx * lls_ctx_create(lls_model * m, char ** err);
 
 // NULL-safe; requires lls_generate_end first if generation is active

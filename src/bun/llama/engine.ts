@@ -59,8 +59,19 @@ export class LlamaEngine {
 
   async loadModel(
     path: string,
-    opts?: { computeMode?: ComputeMode },
-  ): Promise<{ status: "ready"; name: string; compute?: ComputePath }> {
+    opts?: { computeMode?: ComputeMode; contextSize?: number },
+  ): Promise<{
+    status: "ready";
+    name: string;
+    compute?: ComputePath;
+    // feature 030: what the context was created with; fallback is set
+    // when a non-default size failed on memory and the retry at 4096 won
+    context: {
+      requested: number;
+      effective: number;
+      fallback: { reason: "memory" } | null;
+    };
+  }> {
     if (!existsSync(path)) {
       throw new EngineError("MODEL_NOT_FOUND", `model file not found: ${path}`);
     }
@@ -126,7 +137,23 @@ export class LlamaEngine {
       nGpu = halveLayers(nGpu);
     }
 
-    const ctx = symbols.lls_ctx_create(model, ptr(err));
+    // feature 030: requested context size (0 = the shim's 4096 default);
+    // a stale shim without lls_ctx_create_ex always gives 4096
+    const wantCtx = opts?.contextSize ?? 0;
+    const createEx = symbols.lls_ctx_create_ex;
+    let ctx = createEx
+      ? createEx(model, wantCtx, ptr(err))
+      : symbols.lls_ctx_create(model, ptr(err));
+    let contextFallback: { reason: "memory" } | null = null;
+    if (!ctx && createEx && wantCtx !== 0 && wantCtx !== 4096) {
+      // FR-008: retry once at the default when the failure looks like an
+      // allocation problem; a non-memory failure propagates instead
+      const first = readErr(this.shim, err) ?? "";
+      if (/memory|alloc/i.test(first)) {
+        ctx = createEx(model, 0, ptr(err));
+        if (ctx) contextFallback = { reason: "memory" };
+      }
+    }
     if (!ctx) {
       const msg = readErr(this.shim, err) ?? "failed to create context";
       symbols.lls_model_free(model);
@@ -138,7 +165,16 @@ export class LlamaEngine {
     this.modelName = basename(path);
     this.modelPath = path;
     this.compute = this.readComputePath(model);
-    return { status: "ready", name: this.modelName, compute: this.compute };
+    return {
+      status: "ready",
+      name: this.modelName,
+      compute: this.compute,
+      context: {
+        requested: wantCtx || 4096,
+        effective: this.contextSize(),
+        fallback: contextFallback,
+      },
+    };
   }
 
   // feature 029: where the loaded model landed (lls_model_gpu_info);

@@ -3,10 +3,12 @@ import type {
   BenchmarkRecord,
   ComputeMode,
   ComputePath,
+  ContextSizeSettings,
   Conversation,
   ConversationMode,
   ConversationSummary,
   DownloadState,
+  EffectiveContext,
   FusionAdvise,
   FusionPhase,
   GenerationParams,
@@ -118,7 +120,13 @@ export interface ChatRpcSchema extends ElectrobunRPCSchema {
       };
       "model.status": {
         params: Record<string, never>;
-        response: { status: ModelStatus; name?: string; error?: string };
+        response: {
+          status: ModelStatus;
+          name?: string;
+          error?: string;
+          // feature 030: context the loaded model was created with
+          context?: EffectiveContext;
+        };
       };
       "chat.send": {
         params: {
@@ -135,8 +143,14 @@ export interface ChatRpcSchema extends ElectrobunRPCSchema {
           // feature 009: ids from attachment.pick, resolved + injected
           // main-side; unknown id -> INVALID_PARAMS
           attachmentIds?: string[];
+          // feature 030: send anyway when the message alone exceeds the
+          // effective context (the user saw the neededTokens warning)
+          force?: boolean;
         };
-        response: { messageId: string };
+        response:
+          | { messageId: string }
+          // feature 030: pre-send failure — nothing was stored or started
+          | { error: "message_exceeds_context"; neededTokens: number; effective: number };
       };
       "chat.regenerate": {
         params: { messageId: string };
@@ -170,6 +184,8 @@ export interface ChatRpcSchema extends ElectrobunRPCSchema {
           density: Density; // feature 026
           updates: { enabled: boolean; channel: UpdateChannel }; // feature 013
           computeMode: ComputeMode; // feature 029
+          // feature 030: global default + per-model overrides (sanitised)
+          context?: ContextSizeSettings;
         };
       };
       "settings.set": {
@@ -191,6 +207,12 @@ export interface ChatRpcSchema extends ElectrobunRPCSchema {
           updates?: { enabled?: boolean; channel?: UpdateChannel };
           // feature 029: "auto"|"cpu" — takes effect on next model load
           computeMode?: ComputeMode;
+          // feature 030: context size patch; takes effect on next model
+          // load (never mid-response). null entry removes an override.
+          context?: {
+            default?: number | null;
+            perModel?: Record<string, number | null>;
+          };
         };
         response: Record<string, never>;
       };
@@ -601,6 +623,9 @@ export interface ChatRpcSchema extends ElectrobunRPCSchema {
         detail?: string;
         // feature 029: which compute path the ready load landed on
         compute?: ComputePath;
+        // feature 030: context the ready context was created with
+        // (requested vs effective, clamp, memory fallback)
+        context?: EffectiveContext;
       };
       "model.download": DownloadState;
       // feature 022: pushed on every SetupService phase transition

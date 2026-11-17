@@ -62,7 +62,7 @@ export class ModelRegistry {
   // GPU/CPU policy independently (feature 029, FR-003).
   async acquire(
     path: string,
-    opts?: { computeMode?: ComputeMode },
+    opts?: { computeMode?: ComputeMode; contextSize?: number },
   ): Promise<ModelSlot> {
     const existing = this.slots.get(path);
     if (existing) {
@@ -156,7 +156,10 @@ export function createRegistryEngine(deps: RegistryEngineDeps) {
         ? { status: "ready" as const, name: s.fileName }
         : { status: "unloaded" as const };
     },
-    loadModel: async (path: string, opts?: { computeMode?: ComputeMode }) => {
+    loadModel: async (
+      path: string,
+      opts?: { computeMode?: ComputeMode; contextSize?: number },
+    ) => {
       const slot = await deps.registry.acquire(path, opts);
       return {
         status: "ready" as const,

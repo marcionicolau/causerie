@@ -53,6 +53,8 @@ export interface LlamaShimSymbols {
   lls_model_load(path: string, err: number): number;
   lls_model_free(model: number): void;
   lls_ctx_create(model: number, err: number): number;
+  // feature 030: absent on stale shims — context size stays 4096 then
+  lls_ctx_create_ex?(model: number, nCtx: number, err: number): number;
   lls_ctx_free(ctx: number): void;
   lls_ctx_size(ctx: number): number;
   lls_chat_template(model: number): string | null;
@@ -154,17 +156,30 @@ export function loadLlamaShim() {
       returns: FFIType.ptr,
     },
   } as const;
+  // feature 030: sized context creation; a shim that lacks it still
+  // loads — contexts are then created at the default size (4096)
+  const ctxSyms = {
+    lls_ctx_create_ex: {
+      args: [FFIType.ptr, FFIType.u32, FFIType.ptr],
+      returns: FFIType.ptr,
+    },
+  } as const;
   let lib: ReturnType<typeof dlopen>;
   let hasInit = false;
   try {
-    lib = dlopen(libPath, { ...base, ...stateSyms, ...gpuSyms });
+    lib = dlopen(libPath, { ...base, ...stateSyms, ...gpuSyms, ...ctxSyms });
     hasInit = true;
   } catch {
     try {
-      lib = dlopen(libPath, { ...base, ...stateSyms });
+      lib = dlopen(libPath, { ...base, ...stateSyms, ...gpuSyms });
       hasInit = true;
     } catch {
-      lib = dlopen(libPath, base);
+      try {
+        lib = dlopen(libPath, { ...base, ...stateSyms });
+        hasInit = true;
+      } catch {
+        lib = dlopen(libPath, base);
+      }
     }
   }
   if (hasInit) {

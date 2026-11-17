@@ -184,7 +184,7 @@ void lls_model_free(lls_model * m) {
     free(m);
 }
 
-lls_ctx * lls_ctx_create(lls_model * m, char ** err) {
+lls_ctx * lls_ctx_create_ex(lls_model * m, uint32_t n_ctx, char ** err) {
     if (m == NULL) {
         set_err(err, "model is NULL");
         return NULL;
@@ -193,7 +193,11 @@ lls_ctx * lls_ctx_create(lls_model * m, char ** err) {
 
     struct llama_context_params cparams = llama_context_default_params();
     const int32_t train_ctx = llama_model_n_ctx_train(m->handle);
-    cparams.n_ctx = (train_ctx > 0 && train_ctx < 4096) ? (uint32_t) train_ctx : 4096;
+    uint32_t want = n_ctx == 0 ? 4096 : n_ctx;
+    if (train_ctx > 0 && (int32_t) want > train_ctx) {
+        want = (uint32_t) train_ctx;
+    }
+    cparams.n_ctx = want;
     struct llama_context * handle = llama_init_from_model(m->handle, cparams);
     if (handle == NULL) {
         set_err(err, "failed to create llama context");
@@ -215,6 +219,10 @@ lls_ctx * lls_ctx_create(lls_model * m, char ** err) {
         c->kv_cap = 0;
     }
     return c;
+}
+
+lls_ctx * lls_ctx_create(lls_model * m, char ** err) {
+    return lls_ctx_create_ex(m, 0, err);
 }
 
 void lls_generate_end(lls_ctx * c) {
