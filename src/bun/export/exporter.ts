@@ -23,6 +23,7 @@ export function toExportedSettings(s: Settings): ExportedSettings {
     modelOverrides: s.modelOverrides,
     contextLimitWarning: s.contextLimitWarning,
     activeModel: s.activeModelPath ? basename(s.activeModelPath) : null,
+    context: s.context,
   };
 }
 

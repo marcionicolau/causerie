@@ -4,13 +4,19 @@ import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui
 import { defaultFileName, validateDownload } from "./download-rules";
 import { confirmLeave } from "../settings/use-unsaved-guard";
 import { OverrideEditor } from "./OverrideEditor";
+import { ContextSizeControl } from "./ContextSizeControl";
 import { WithReason } from "@/components/with-reason";
 import { confirm } from "@/lib/confirm";
 import { notify } from "@/lib/notify";
 import { EmptyState } from "@/components/empty-state";
 import { IconLibrary } from "@/components/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ModelAdvise, RoleView } from "@shared/types";
+import type {
+  ContextSizeSettings,
+  EffectiveContext,
+  ModelAdvise,
+  RoleView,
+} from "@shared/types";
 import { IconBenchmark, IconDownload, IconRefresh, IconSliders, IconSpinner } from "@/components/icons";
 import type { DownloadState, ModelMeta } from "@shared/types";
 import { invoke, on } from "@/lib/rpc";
@@ -50,6 +56,10 @@ export function ModelLibrary({ activeName, onLoad, autoLoadOnDownload }: Props) 
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [overrideFor, setOverrideFor] = useState<string | null>(null);
+  // feature 030: context-size settings + the loaded model's effective ctx
+  const [ctxFor, setCtxFor] = useState<string | null>(null);
+  const [ctxSettings, setCtxSettings] = useState<ContextSizeSettings>();
+  const [loadedCtx, setLoadedCtx] = useState<EffectiveContext | null>(null);
   const [tags, setTags] = useState<RoleView[]>([]);
   const [assignTag, setAssignTag] = useState("");
   // feature 011: live verdicts keyed by fileName; null = not fetched yet
@@ -64,12 +74,16 @@ export function ModelLibrary({ activeName, onLoad, autoLoadOnDownload }: Props) 
 
   const refresh = useCallback(async () => {
     try {
-      const [{ models: list }, adv] = await Promise.all([
+      const [{ models: list }, adv, s, st] = await Promise.all([
         invoke("model.list", {}),
         invoke("model.advise", {}),
+        invoke("settings.get", {}),
+        invoke("model.status", {}),
       ]);
       setModels(list);
       setAdvise(new Map(adv.models.map((a) => [a.fileName, a])));
+      setCtxSettings(s.context);
+      setLoadedCtx(st.context ?? null);
     } catch {
       // list is best-effort
     }
@@ -276,6 +290,8 @@ export function ModelLibrary({ activeName, onLoad, autoLoadOnDownload }: Props) 
                     {m.paramCount ?? "?"} · {m.quantization ?? "?"} ·{" "}
                     {fmtBytes(m.sizeBytes)}
                     {m.contextTrain ? ` · ctx ${m.contextTrain}` : ""}
+                    {/* feature 030: effective size of the loaded model */}
+                    {active && loadedCtx && ` · loaded ctx ${loadedCtx.effective.toLocaleString()}`}
                   </span>
                   {(() => {
                     const a = advise.get(m.fileName);
@@ -349,6 +365,18 @@ export function ModelLibrary({ activeName, onLoad, autoLoadOnDownload }: Props) 
                       <Button
                         size="sm"
                         variant="ghost"
+                        aria-label={`Context size for ${m.name ?? m.fileName}`}
+                        title="Context size"
+                        aria-expanded={ctxFor === m.fileName}
+                        onClick={() =>
+                          setCtxFor(ctxFor === m.fileName ? null : m.fileName)
+                        }
+                      >
+                        <span className="text-xs font-medium">ctx</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
                         aria-label={`Generation overrides for ${m.name ?? m.fileName}`}
                         title="Per-model generation overrides"
                         aria-expanded={overrideFor === m.fileName}
@@ -365,6 +393,30 @@ export function ModelLibrary({ activeName, onLoad, autoLoadOnDownload }: Props) 
                     </>
                   )}
                 </div>
+                {/* feature 030 (US1): clamp/fallback notices after a load */}
+                {active && loadedCtx?.clamp === "model-maximum" && (
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Requested {loadedCtx.requested.toLocaleString()} — clamped to
+                    the model&apos;s maximum {loadedCtx.effective.toLocaleString()}.
+                  </p>
+                )}
+                {active && loadedCtx?.fallback && (
+                  <p className="mt-1 text-xs text-warning">
+                    Context fell back to {loadedCtx.effective.toLocaleString()}{" "}
+                    — not enough memory for {loadedCtx.requested.toLocaleString()}.
+                  </p>
+                )}
+                {ctxFor === m.fileName && (
+                  <ContextSizeControl
+                    fileName={m.fileName}
+                    active={active}
+                    advise={advise.get(m.fileName)}
+                    context={ctxSettings}
+                    loaded={active ? loadedCtx : null}
+                    onSaved={() => void refresh()}
+                    onReload={() => onLoad(m.path)}
+                  />
+                )}
                 {overrideFor === m.fileName && (
                   <OverrideEditor fileName={m.fileName} onClose={() => setOverrideFor(null)} />
                 )}

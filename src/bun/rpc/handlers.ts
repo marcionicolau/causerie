@@ -115,12 +115,10 @@ import { basename, join } from "node:path";
 type Events = ChatRpcSchema["webview"]["messages"];
 type Emit = <M extends keyof Events>(method: M, payload: Events[M]) => void;
 
-// feature 011: benchmarks run at the shim's default ctx (D3); unmeasured
-// models fall back to a conservative 256 KiB/token KV estimate over a 4 k
-// ctx (flagged basis: "estimated" — never presented as measured)
-const BENCH_CTX = 2048;
+// feature 011: unmeasured models fall back to a conservative
+// 256 KiB/token KV estimate (flagged basis: "estimated" — never
+// presented as measured); feature 030: scaled at the requested ctx
 const EST_KV = 256 * 1024;
-const EST_CTX = 4096;
 // module-level single-flight flag for benchmark runs (independent of
 // engine.isGenerating — a benchmark holds the engine itself)
 let benchmarking = false;
@@ -1017,24 +1015,29 @@ export function createRequestHandlers(deps: HandlerDeps) {
       const basisFor = (
         fileName: string,
         sizeBytes: number,
+        ctx: number,
       ): { bytes: number; measured: boolean; kv: number; rec?: BenchmarkRecord } => {
         const rec = benchmarks[fingerprint(fileName, sizeBytes)];
         if (rec) {
           return {
             bytes: rec.peakBytes,
             measured: true,
-            kv: kvPerToken(sizeBytes, rec.peakBytes, BENCH_CTX),
+            // feature 030: the benchmark ran at the requested ctx
+            kv: kvPerToken(sizeBytes, rec.peakBytes, ctx),
             rec,
           };
         }
         return {
-          bytes: sizeBytes + EST_KV * EST_CTX,
+          // feature 030 (T023): estimate memory at the model's requested
+          // ctx, not a fixed 4 k — the load will use that size
+          bytes: sizeBytes + EST_KV * ctx,
           measured: false,
           kv: EST_KV,
         };
       };
       const models: ModelAdvise[] = scanModels().map((m) => {
-        const b = basisFor(m.fileName, m.sizeBytes);
+        const reqCtx = ctxRequestedFor(m.path);
+        const b = basisFor(m.fileName, m.sizeBytes, reqCtx);
         const row: ModelAdvise = {
           path: m.path,
           fileName: m.fileName,
@@ -1057,8 +1060,16 @@ export function createRequestHandlers(deps: HandlerDeps) {
         try {
           const p = rolesSvc().resolve(plannerTag);
           const e = rolesSvc().resolve(executorTag);
-          const pb = basisFor(basename(p.path), statSync(p.path).size);
-          const eb = basisFor(basename(e.path), statSync(e.path).size);
+          const pb = basisFor(
+            basename(p.path),
+            statSync(p.path).size,
+            ctxRequestedFor(p.path),
+          );
+          const eb = basisFor(
+            basename(e.path),
+            statSync(e.path).size,
+            ctxRequestedFor(e.path),
+          );
           const { sequentialPeakBytes, combinedBytes } = fusionFit(
             pb.bytes,
             eb.bytes,
