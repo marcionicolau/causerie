@@ -1,6 +1,7 @@
 // Export/import wire types (feature 008). Single versioned envelope for
 // both single-conversation and full-backup exports (research D1).
 import type {
+  ContextSizeSettings,
   Conversation,
   GenerationParams,
   ModelTag,
@@ -20,6 +21,8 @@ export interface ExportedSettings {
   modelOverrides: Record<string, Partial<GenerationParams>>;
   contextLimitWarning: boolean;
   activeModel: string | null;
+  // feature 030 (T025): context-size settings round-trip; absent on older exports
+  context?: ContextSizeSettings;
 }
 
 export interface ExportEnvelope {

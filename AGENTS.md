@@ -646,3 +646,35 @@ draft-side; `MessageList` renders `Message.attachments` chips (`·trunc` /
 
 Gotcha: bun:ffi NULL returns are `null`, not `0` — always test truthiness
 (`if (model)`), never `!== 0`.
+
+## Feature 030 — configurable context size
+
+- `llama/context-size.ts` — pure resolver: `DEFAULT=4096`, bounds
+  512..1_048_576, `sanitizeContextSettings` drops invalid persisted
+  values, `resolveContextSize(settings, basename, trainCtx)` →
+  `{requested, effective=min(requested, trainCtx), source, clamp}`
+  (perModel > global > default).
+- Shim: `lls_ctx_create_ex(model, n_ctx, err)` (`0` → 4096, clamps to
+  `n_ctx_train`); `lls_ctx_create` delegates with 0. `LlamaEngine` takes
+  an injectable shim loader (constructor arg) — fake-shim tests cover
+  the memory-fallback retry without a real .so.
+- `engine.loadModel(path, {computeMode, contextSize})` →
+  `context:{requested, effective, fallback}`; one retry at 4096 only on
+  memory-looking failure at a non-default size.
+- `handlers.ts`: `ctxRequestedFor(path)` = the resolution used by
+  model.load, fusion role loads, and `model.benchmark`; `model.status`
+  + `model.progress` carry `EffectiveContext`. Advisor estimate/KV math
+  is scaled at the requested ctx (no fixed-4 k budgeting). `chat.send`
+  preflights `tokenCount(newest)+64 > effective` →
+  `{error:"message_exceeds_context"}` unless `force:true`.
+- `settings.set {context:{default,perModel}}` — `null` removes a level;
+  invalid values are a typed error, not a silent drop. Export/import
+  round-trips `context` (sanitized on import).
+- Renderer: `features/models/ContextSizeControl.tsx` (presets
+  4k/8k/16k/32k + custom, source label, over-recommend warning,
+  "applies on next load" + Reload now, clear-override, set-as-global,
+  use-recommended); `ModelLibrary` shows `loaded ctx`, clamp and memory
+  fallback notices on the active row.
+
+Gotcha: size changes never apply mid-turn — persisted value wins at the
+next `loadModel` only.

@@ -14,6 +14,7 @@ import type {
   Settings,
 } from "../../shared/types";
 import { EngineError } from "../llama/engine";
+import { sanitizeContextSettings } from "../llama/context-size";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -119,5 +120,6 @@ export function toSettings(
     generation: imported.generation,
     modelOverrides: imported.modelOverrides,
     tags: mergedTags,
+    context: sanitizeContextSettings(imported.context),
   };
 }

@@ -37,6 +37,12 @@ export class EngineError extends Error {
 const TOKEN_BUF_CAP = 4096;
 
 export class LlamaEngine {
+  // feature 030 (T016): injectable shim loader — tests hand a fake
+  // LlamaShim to exercise failure paths without touching the real .so
+  constructor(
+    private readonly shimLoader: () => LlamaShim = loadLlamaShim,
+  ) {}
+
   private shim: LlamaShim | null = null;
   private model: number | null = null;
   private ctx: number | null = null;
@@ -84,7 +90,7 @@ export class LlamaEngine {
 
     if (this.shim === null) {
       try {
-        this.shim = loadLlamaShim();
+        this.shim = this.shimLoader();
       } catch (e) {
         throw new EngineError("ENGINE_ERROR", String(e));
       }
