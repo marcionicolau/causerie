@@ -18,7 +18,7 @@ const SAMPLE_MS = 250;
 export interface BenchEngine {
   loadModel(
     path: string,
-    opts?: { computeMode?: ComputeMode },
+    opts?: { computeMode?: ComputeMode; contextSize?: number },
   ): Promise<{ status: "ready"; name: string }>;
   unloadModel(): void;
   generate(
@@ -35,7 +35,7 @@ export async function runBenchmark(
   eng: BenchEngine,
   path: string,
   restorePath: string | null,
-  opts?: { computeMode?: ComputeMode },
+  opts?: { computeMode?: ComputeMode; contextSize?: number; restoreContextSize?: number },
 ): Promise<BenchmarkRecord> {
   const sizeBytes = statSync(path).size;
   const rssBefore = rss();
@@ -62,7 +62,7 @@ export async function runBenchmark(
     eng.unloadModel();
     if (restorePath) {
       try {
-        await eng.loadModel(restorePath, opts);
+        await eng.loadModel(restorePath, { ...opts, contextSize: opts?.restoreContextSize });
       } catch {
         // restore is best-effort — the benchmark record still returns
       }

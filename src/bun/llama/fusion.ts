@@ -48,6 +48,9 @@ export interface FusionTurnOpts {
   // feature 029: forwarded into registry.acquire so planner/executor
   // slots resolve the GPU/CPU policy independently (FR-003)
   computeMode?: ComputeMode;
+  // feature 030: per-role context size resolution (settings + per-model
+  // override + GGUF train clamp) — absent means shim default
+  contextSizeFor?: (path: string) => number;
   // feature 015 (FR-009): the executor's answer phase runs through the
   // tool loop; the planner's output is never scanned for calls
   tools?: {
@@ -243,6 +246,7 @@ export async function runFusionTurn(
         // oxlint-disable-next-line no-await-in-loop -- sequential candidate cascade
         slot = await o.registry.acquire(role.path, {
           computeMode: o.computeMode,
+          contextSize: o.contextSizeFor?.(role.path),
         });
         o.registry.pin(slot.path, o.conversationId);
         o.onEvent("chat.phase", phaseEvent(phase, role));
