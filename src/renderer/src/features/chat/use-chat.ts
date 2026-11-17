@@ -615,7 +615,7 @@ export function useChat() {
           attachments: attachmentChips.length ? attachmentChips : null,
         },
       });
-      const { messageId } = await invoke("chat.send", {
+      const res = await invoke("chat.send", {
         conversationId,
         content,
         userMessageId,
@@ -624,6 +624,16 @@ export function useChat() {
         executorTag: state.executorTag,
         attachmentIds: attachmentIds.length ? attachmentIds : undefined,
       });
+      // spec 030: oversize preflight returns an error payload — surface it as
+      // a notice; the confirm/force dialog is remaining renderer work
+      if ("error" in res) {
+        dispatch({
+          type: "notice",
+          message: `Message exceeds the model's context: ~${res.neededTokens} tokens needed, ${res.effective} available.`,
+        });
+        return;
+      }
+      const { messageId } = res;
       // feature 006: apply a persona picked on the draft now that the
       // conversation exists server-side
       if (pendingPersona.current) {
