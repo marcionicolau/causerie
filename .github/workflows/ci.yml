@@ -29,6 +29,10 @@ jobs:
       # object anyway; llama.cpp auto-uses ccache when present (GGML_CCACHE)
       - name: install ccache
         run: sudo apt-get install -y ccache
+      # feature 029: GGML_VULKAN build needs glslc + Vulkan headers +
+      # SPIRV-Headers (build-machine prerequisite, not a runtime dep)
+      - name: install vulkan sdk deps
+        run: sudo apt-get install -y libvulkan-dev glslc spirv-headers
       - name: cache ccache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
