@@ -34,7 +34,7 @@ description: "Task list for spec 030 — configurable context size"
 - [x] T011 [US1] Reload-needed indicator and "Reload now" button next to the changed value (no automatic reload) in `src/renderer/src/features/models/ContextSizeControl.tsx` and `ModelLibrary.tsx`
 - [x] T012 [US1] Clamp notice when requested > model maximum, shown after load in the model view (`ModelLibrary.tsx`)
 - [x] T013 [US1] FFI boundary tests in `tests/ffi-context.test.ts`: default path gives 4096; 16384 on a model trained ≥ that; request above trained clamps; invalid values rejected before the call
-- [ ] T014 [US1] Run quickstart Q1–Q3 and record the results in the PR description
+- [x] T014 [US1] Run quickstart Q1–Q3 and record the results in the PR description
 
 ---
 
@@ -75,7 +75,7 @@ description: "Task list for spec 030 — configurable context size"
 
 - [x] T026 [P] Show the effective size of each loaded model in the model/performance view (`src/renderer/src/features/metrics/` or `models/`) (FR-009)
 - [x] T027 [P] Add the module to the `AGENTS.md` module map and a short note in the model settings docs
-- [ ] T028 Run `bun run typecheck`, `bun run lint`, `bun test ./tests`, and quickstart Q1–Q9; confirm no network calls were added (FR-012); link results in the PR
+- [x] T028 Run `bun run typecheck`, `bun run lint`, `bun test ./tests`, and quickstart Q1–Q9; confirm no network calls were added (FR-012); link results in the PR
 
 ---
 
