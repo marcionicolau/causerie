@@ -567,6 +567,7 @@ export function createRequestHandlers(deps: HandlerDeps) {
           executor,
           registry: deps.registry,
           computeMode: deps.store.getSettings().computeMode,
+          contextSizeFor: ctxRequestedFor,
           snapshot: snapSync() ?? undefined,
           conversationId: conv.id,
           history,
@@ -691,6 +692,7 @@ export function createRequestHandlers(deps: HandlerDeps) {
             // oxlint-disable-next-line no-await-in-loop -- sequential candidate cascade
             const slot = await deps.registry.acquire(attempt.path, {
               computeMode: deps.store.getSettings().computeMode,
+              contextSize: ctxRequestedFor(attempt.path),
             });
             deps.registry.pin(slot.path, conv.id);
             slotPath = slot.path;
@@ -981,6 +983,10 @@ export function createRequestHandlers(deps: HandlerDeps) {
         const prev = deps.store.getSettings().activeModelPath;
         const record = await runBenchmark(deps.engine, path, prev ?? null, {
           computeMode: deps.store.getSettings().computeMode,
+          // feature 030: measure at the requested size so kvPerToken /
+          // recommendedCtx reflect the real working context (FR-007)
+          contextSize: ctxRequestedFor(path),
+          restoreContextSize: prev ? ctxRequestedFor(prev) : undefined,
         });
         deps.emit("model.progress", {
           phase: "ready",
