@@ -33,7 +33,7 @@ export function ThemeSettings({ compact }: { compact?: boolean }) {
             "flex items-center gap-2 rounded-md p-2 text-sm outline-none hover:bg-sidebar-accent focus-visible:ring-2 focus-visible:ring-ring",
             compact ? "justify-center" : "w-full text-left group-data-[state=collapsed]:justify-center",
           )}
-          aria-label="Theme"
+          aria-label={`Theme: ${Current.label}`}
           title={`Theme: ${Current.label}`}
         >
           <Current.icon className="size-4 shrink-0" />

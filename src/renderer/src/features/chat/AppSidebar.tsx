@@ -148,7 +148,6 @@ export function AppSidebar({
           size="sm"
           className="w-full justify-start gap-2 text-muted-foreground group-data-[state=collapsed]:hidden"
           onClick={onOpenPalette}
-          aria-label="Open command palette"
         >
           <IconSearch aria-hidden="true" /> Search &amp; commands
           <Kbd className="ml-auto">
