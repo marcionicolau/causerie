@@ -154,11 +154,16 @@ export async function runProbe(
 let inFlight: Promise<GpuProbeResult> | null = null;
 let settled: GpuProbeResult | null = null;
 let faulted = false;
+let generation = 0;
 
 // kick the probe at app init — fire-and-forget, result cached
 export function startProbe(shimDir: string, deps: ProbeDeps = {}): void {
   if (inFlight !== null || settled !== null) return;
+  const gen = generation;
   inFlight = runProbe(shimDir, deps).then((r) => {
+    // a resetProbeState() after this probe started orphans it — its
+    // late result must not clobber the newer generation's state
+    if (gen !== generation) return r;
     if (!faulted) settled = r;
     inFlight = null;
     return r;
@@ -212,8 +217,10 @@ export function probeResult(): GpuProbeResult | null {
   return settled;
 }
 
-// test hook: reset module state
+// test hook: reset module state; also orphans any in-flight probe so its
+// late result can't leak into the next test
 export function resetProbeState(): void {
+  generation++;
   inFlight = null;
   settled = null;
   faulted = false;
