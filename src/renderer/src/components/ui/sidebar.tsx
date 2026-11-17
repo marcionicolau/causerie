@@ -321,6 +321,7 @@ export function SidebarMenuButton({
         "[&_svg]:size-4 [&_svg]:shrink-0",
         className,
       )}
+      aria-label={state === "collapsed" && tooltip ? tooltip : undefined}
       {...props}
     >
       {children}
