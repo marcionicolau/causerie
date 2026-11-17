@@ -16,6 +16,20 @@ set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
 set(GGML_BACKEND_DL ON CACHE BOOL "" FORCE)
 set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
 
+# feature 029: cross-vendor GPU offload via a dlopen'd ggml backend.
+# Vulkan covers NVIDIA/AMD/Intel on Linux+Windows (runtime needs only the
+# driver's ICD); Metal is default-on on Apple. CAUSERIE_GPU=off produces a
+# CPU-only build (dev machines without the Vulkan SDK). The backend lib is
+# staged under gpu/ so the CPU-only lls_backend_init scan never touches it.
+set(GGML_VULKAN_DEFAULT OFF)
+if((UNIX AND NOT APPLE) OR WIN32)
+    set(GGML_VULKAN_DEFAULT ON)
+endif()
+if(DEFINED ENV{CAUSERIE_GPU} AND "$ENV{CAUSERIE_GPU}" STREQUAL "off")
+    set(GGML_VULKAN_DEFAULT OFF)
+endif()
+set(GGML_VULKAN ${GGML_VULKAN_DEFAULT} CACHE BOOL "ggml: use Vulkan" FORCE)
+
 if(UNIX AND NOT APPLE)
     # applies to every target created below — incl. the variant
     # libs, which link ggml-base and must resolve it via $ORIGIN
@@ -28,6 +42,14 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../vendor/llama.cpp
                  EXCLUDE_FROM_ALL)
 
 add_library(llama_shim SHARED llama_shim.c)
+
+# feature 029: lls_probe — isolated GPU availability check. Enumerates
+# dlopen'd ggml backends and prints device JSON; runs as a child process
+# so a broken GPU driver can only kill the probe, never the app.
+add_executable(lls_probe gpu_probe.c)
+target_include_directories(lls_probe PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../vendor/llama.cpp/ggml/include)
+target_link_libraries(lls_probe PRIVATE ggml)
 target_include_directories(llama_shim PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../vendor/llama.cpp/include
     ${CMAKE_CURRENT_SOURCE_DIR}/../vendor/llama.cpp/ggml/include)
@@ -57,7 +79,7 @@ endif()
 
 if(APPLE)
     # runtime must find libllama/libggml next to the shim inside the bundle
-    set_target_properties(llama_shim PROPERTIES
+    set_target_properties(llama_shim lls_probe PROPERTIES
         INSTALL_RPATH "@loader_path"
         BUILD_WITH_INSTALL_RPATH TRUE)
     foreach(t llama ggml ggml-base ggml-cpu)
@@ -71,7 +93,7 @@ elseif(UNIX)
     # FR-008: $ORIGIN so the shim + ggml/llama resolve their deps next to
     # themselves — in the cmake bin/ dir AND in the packaged bundle —
     # never from an absolute build-tree path baked at compile time.
-    foreach(t llama_shim llama ggml ggml-base ggml-cpu)
+    foreach(t llama_shim lls_probe llama ggml ggml-base ggml-cpu)
         if(TARGET ${t})
             set_target_properties(${t} PROPERTIES
                 BUILD_RPATH "$ORIGIN"

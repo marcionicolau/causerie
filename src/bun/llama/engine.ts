@@ -2,11 +2,23 @@
 // Pull model: generate() drives an async lls_step loop on the JS thread,
 // yielding to the event loop between steps so RPC stays responsive.
 import { accessSync, constants, existsSync, renameSync, rmSync } from "node:fs";
-import { ptr } from "bun:ffi";
-import { basename } from "node:path";
+import { CString, ptr } from "bun:ffi";
+import { basename, dirname, join } from "node:path";
 import type { RpcErrorCode } from "../../shared/rpc-contract";
-import type { GenerationParams } from "../../shared/types";
+import type {
+  ComputeMode,
+  ComputePath,
+  GenerationParams,
+} from "../../shared/types";
 import { loadLlamaShim, newErrSlot, readErr, type LlamaShim } from "./ffi";
+import {
+  awaitProbe,
+  fitGpuLayers,
+  halveLayers,
+  noteStaleShim,
+  reportRuntimeFault,
+  resolveMode,
+} from "./gpu";
 import { packParams } from "./params";
 import { Utf8Stream } from "./utf8";
 import { entryKey, type SnapshotStore } from "../kv/store";
@@ -34,6 +46,7 @@ export class LlamaEngine {
   private kvConvId: string | null = null;
   private kvRoleKey = "main"; // feature 010: "main"|"planner"|"executor"
   private modelPath: string | null = null;
+  private compute: ComputePath | null = null; // feature 029
   private tokenBuf = new Uint8Array(TOKEN_BUF_CAP);
   private outLen = new BigUint64Array(1);
 
@@ -44,7 +57,10 @@ export class LlamaEngine {
     return { status: "unloaded" };
   }
 
-  async loadModel(path: string): Promise<{ status: "ready"; name: string }> {
+  async loadModel(
+    path: string,
+    opts?: { computeMode?: ComputeMode },
+  ): Promise<{ status: "ready"; name: string; compute?: ComputePath }> {
     if (!existsSync(path)) {
       throw new EngineError("MODEL_NOT_FOUND", `model file not found: ${path}`);
     }
@@ -65,13 +81,49 @@ export class LlamaEngine {
     const { symbols } = this.shim;
     const err = newErrSlot();
 
-    const model = symbols.lls_model_load(path, ptr(err));
-    if (!model) {
-      const msg = readErr(this.shim, err) ?? "failed to load model";
-      throw new EngineError(
-        /memory|alloc/i.test(msg) ? "OUT_OF_MEMORY" : "MODEL_INVALID",
-        msg,
-      );
+    // feature 029: resolve the compute path. CPU is today's path verbatim;
+    // auto+usable-GPU probes GPU layers fitted to free VRAM, retry-halving
+    // on ANY load2 failure (corrupt file also fails CPU-side at n=0).
+    let nGpu = 0;
+    const canGpu =
+      opts?.computeMode !== "cpu" &&
+      typeof symbols.lls_model_load2 === "function" &&
+      typeof symbols.lls_backend_init_gpu === "function";
+    if (opts?.computeMode !== "cpu" && !canGpu) {
+      // stale shim predating this feature: GPU unusable regardless of
+      // the probe — surface it via compute.status and stay on CPU
+      noteStaleShim();
+    }
+    if (canGpu) {
+      const probe = await awaitProbe();
+      if (resolveMode(opts?.computeMode ?? "auto", probe) === "gpu") {
+        symbols.lls_backend_init_gpu!(
+          join(dirname(this.shim.path), "gpu"),
+        );
+        const meta = this.ggufMeta(path);
+        const free = Math.max(...probe.devices.map((d) => d.freeBytes));
+        nGpu = fitGpuLayers(meta.fileBytes, meta.nLayer, free);
+      }
+    }
+    // bun:ffi returns null for a NULL pointer — 0 is unreachable here,
+    // but !model covers both for safety
+    let model: number | null = null;
+    for (let attempts = 0; ; attempts++) {
+      model =
+        nGpu !== 0 && symbols.lls_model_load2
+          ? symbols.lls_model_load2(path, nGpu, ptr(err))
+          : symbols.lls_model_load(path, ptr(err));
+      if (model) break;
+      const msg = readErr(this.shim, err);
+      // any failure while a GPU request is live → halve; the terminal
+      // n=0 attempt is the plain CPU load (≤4 GPU attempts total)
+      if (nGpu === 0 || attempts >= 3) {
+        throw new EngineError(
+          msg && /memory|alloc/i.test(msg) ? "OUT_OF_MEMORY" : "MODEL_INVALID",
+          msg ?? "failed to load model",
+        );
+      }
+      nGpu = halveLayers(nGpu);
     }
 
     const ctx = symbols.lls_ctx_create(model, ptr(err));
@@ -85,7 +137,70 @@ export class LlamaEngine {
     this.ctx = ctx;
     this.modelName = basename(path);
     this.modelPath = path;
-    return { status: "ready", name: this.modelName };
+    this.compute = this.readComputePath(model);
+    return { status: "ready", name: this.modelName, compute: this.compute };
+  }
+
+  // feature 029: where the loaded model landed (lls_model_gpu_info);
+  // stale shims report cpu — informational only, never gates a load
+  computePath(): ComputePath | null {
+    return this.compute;
+  }
+
+  private readComputePath(model: number): ComputePath {
+    const { symbols } = this.shim ?? {};
+    if (!symbols?.lls_model_gpu_info) return { mode: "cpu" };
+    const err = newErrSlot();
+    const p = symbols.lls_model_gpu_info(model, ptr(err));
+    if (!p) return { mode: "cpu" };
+    try {
+      const j = JSON.parse(new CString(p).toString()) as {
+        gpuLayers?: number;
+        layersTotal?: number;
+        device?: string | null;
+      };
+      const gpu = j.gpuLayers ?? 0;
+      const total = j.layersTotal ?? 0;
+      return gpu > 0
+        ? {
+            mode: gpu >= total ? "gpu-full" : "gpu-partial",
+            device: j.device ?? undefined,
+            gpuLayers: gpu,
+            layersTotal: total,
+          }
+        : { mode: "cpu" };
+    } catch {
+      return { mode: "cpu" };
+    } finally {
+      symbols.lls_free_string(p);
+    }
+  }
+
+  // feature 029: header-only GGUF read for fit math (same JSON the
+  // model library surfaces); absent fields degrade to the -1 fallback
+  private ggufMeta(path: string): {
+    nLayer: number | null;
+    fileBytes: number;
+  } {
+    const { symbols } = this.shim ?? {};
+    if (!symbols?.lls_gguf_meta) return { nLayer: null, fileBytes: 0 };
+    const err = newErrSlot();
+    const p = symbols.lls_gguf_meta(path, ptr(err));
+    if (!p) return { nLayer: null, fileBytes: 0 };
+    try {
+      const j = JSON.parse(new CString(p).toString()) as {
+        nLayer?: number | null;
+        fileBytes?: number;
+      };
+      return {
+        nLayer: typeof j.nLayer === "number" ? j.nLayer : null,
+        fileBytes: typeof j.fileBytes === "number" ? j.fileBytes : 0,
+      };
+    } catch {
+      return { nLayer: null, fileBytes: 0 };
+    } finally {
+      symbols.lls_free_string(p);
+    }
   }
 
   unloadModel(): void {
@@ -102,6 +217,7 @@ export class LlamaEngine {
     }
     this.modelName = null;
     this.modelPath = null;
+    this.compute = null;
     this.generating = false;
     this.stopRequested = false;
     this.kvConvId = null;
@@ -232,6 +348,11 @@ export class LlamaEngine {
           };
         }
         if (r < 0) {
+          // feature 029 (FR-012): a GPU-path decode failure latches the
+          // probe so the next load resolves CPU automatically
+          if (this.compute?.mode.startsWith("gpu")) {
+            reportRuntimeFault();
+          }
           throw new EngineError("ENGINE_ERROR", "decode step failed");
         }
         tokens += 1;

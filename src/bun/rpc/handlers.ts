@@ -5,6 +5,8 @@ import { defineElectrobunRPC } from "electrobun/main/rpc";
 import type { ChatRpcSchema, RpcErrorCode } from "../../shared/rpc-contract";
 import type {
   BenchmarkRecord,
+  ComputeMode,
+  ComputePath,
   Conversation,
   FusionAdvise,
   GenerationParams,
@@ -25,6 +27,8 @@ import type {
 } from "../../shared/types";
 import { DEFAULT_GENERATION } from "../../shared/types";
 import { EngineError } from "../llama/engine";
+import { probeResult, startProbe } from "../llama/gpu";
+import { resolveNativeDir } from "../llama/ffi";
 import { mergeParams, validateParams } from "../llama/params";
 import { buildPrompt, composeSystem, type PromptTurn } from "../llama/prompt";
 import { runToolLoop } from "../tools/loop";
@@ -117,8 +121,15 @@ let benchmarking = false;
 
 export interface EngineLike {
   status(): { status: ModelStatus; name?: string; error?: string };
-  loadModel(path: string): Promise<{ status: "ready"; name: string }>;
+  // feature 029: opts.computeMode resolved from settings at call time —
+  // absent means the engine default ("auto")
+  loadModel(
+    path: string,
+    opts?: { computeMode?: ComputeMode },
+  ): Promise<{ status: "ready"; name: string; compute?: ComputePath }>;
   unloadModel(): void;
+  // feature 029: compute path that served the current load (fakes omit)
+  computePath?(): ComputePath | null;
   isGenerating(): boolean;
   contextSize(): number;
   chatTemplate(): string | null;
@@ -523,6 +534,7 @@ export function createRequestHandlers(deps: HandlerDeps) {
           planner,
           executor,
           registry: deps.registry,
+          computeMode: deps.store.getSettings().computeMode,
           snapshot: snapSync() ?? undefined,
           conversationId: conv.id,
           history,
@@ -634,6 +646,9 @@ export function createRequestHandlers(deps: HandlerDeps) {
             status: "failed",
             fallback: attempt.role?.servedBy.kind === "fallback" || undefined,
             promptPreview: preview(current),
+            // feature 029
+            compute: eng.computePath?.()?.mode,
+            device: eng.computePath?.()?.device,
           });
         };
         const genParams = attempt.role
@@ -642,7 +657,9 @@ export function createRequestHandlers(deps: HandlerDeps) {
         try {
           if (attempt.path && deps.registry) {
             // oxlint-disable-next-line no-await-in-loop -- sequential candidate cascade
-            const slot = await deps.registry.acquire(attempt.path);
+            const slot = await deps.registry.acquire(attempt.path, {
+              computeMode: deps.store.getSettings().computeMode,
+            });
             deps.registry.pin(slot.path, conv.id);
             slotPath = slot.path;
             eng = slot.engine;
@@ -739,6 +756,9 @@ export function createRequestHandlers(deps: HandlerDeps) {
                 fallback:
                   attempt.role?.servedBy.kind === "fallback" || undefined,
                 promptPreview: preview(current),
+                // feature 029: which compute path served this call
+                compute: eng.computePath?.()?.mode,
+                device: eng.computePath?.()?.device,
               });
               recorded = true;
               if (attempt.role?.servedBy.kind === "fallback") {
@@ -843,8 +863,14 @@ export function createRequestHandlers(deps: HandlerDeps) {
       deps.emit("model.progress", { phase: "loading" });
       void (async () => {
         try {
-          const res = await deps.engine.loadModel(path);
-          deps.emit("model.progress", { phase: "ready", detail: res.name });
+          const res = await deps.engine.loadModel(path, {
+            computeMode: deps.store.getSettings().computeMode,
+          });
+          deps.emit("model.progress", {
+            phase: "ready",
+            detail: res.name,
+            compute: res.compute,
+          });
           if (deps.roles) {
             // bind("default") also syncs activeModelPath (FR-010)
             deps.roles.bind("default", path);
@@ -899,7 +925,9 @@ export function createRequestHandlers(deps: HandlerDeps) {
       deps.emit("model.progress", { phase: "loading", detail: "benchmarking" });
       try {
         const prev = deps.store.getSettings().activeModelPath;
-        const record = await runBenchmark(deps.engine, path, prev ?? null);
+        const record = await runBenchmark(deps.engine, path, prev ?? null, {
+          computeMode: deps.store.getSettings().computeMode,
+        });
         deps.emit("model.progress", {
           phase: "ready",
           detail: "benchmark complete",
@@ -1426,6 +1454,8 @@ export function createRequestHandlers(deps: HandlerDeps) {
           channel:
             s.updates?.channel ?? deps.updater?.preferredChannel() ?? "canary",
         },
+        // feature 029: absent → "auto"
+        computeMode: s.computeMode ?? "auto",
       };
     },
     "settings.set": ({
@@ -1438,6 +1468,7 @@ export function createRequestHandlers(deps: HandlerDeps) {
       density,
       resolvedTheme: resolvedPatch,
       updates: updatesPatch,
+      computeMode,
     }: {
       generation?: Partial<GenerationParams>;
       outputPanel?: boolean;
@@ -1451,6 +1482,7 @@ export function createRequestHandlers(deps: HandlerDeps) {
       density?: import("../../shared/types").Density;
       resolvedTheme?: "light" | "dark";
       updates?: { enabled?: boolean; channel?: UpdateChannel };
+      computeMode?: ComputeMode;
     }) => {
       const err =
         (generation ? validateParams(generation) : null) ??
@@ -1462,6 +1494,13 @@ export function createRequestHandlers(deps: HandlerDeps) {
         next.generation = mergeParams(s.generation, generation);
       }
       if (outputPanel !== undefined) next.outputPanel = outputPanel;
+      // feature 029: persisted compute preference; next model load only
+      if (computeMode !== undefined) {
+        if (computeMode !== "auto" && computeMode !== "cpu") {
+          fail("INVALID_PARAMS", `unknown compute mode: ${computeMode}`);
+        }
+        next.computeMode = computeMode;
+      }
       if (themeMode !== undefined) {
         if (themeMode !== "light" && themeMode !== "dark" && themeMode !== "system") {
           fail("INVALID_PARAMS", `unknown theme mode: ${themeMode}`);
@@ -1564,6 +1603,36 @@ export function createRequestHandlers(deps: HandlerDeps) {
     // feature 016
     "metrics.list": () => ({ entries: deps.metrics?.list() ?? [] }),
     "metrics.clear": () => deps.metrics?.clear() ?? { removed: 0 },
+    // feature 029: cached probe state only — never synchronously probes
+    "compute.status": () => {
+      const mode = deps.store.getSettings().computeMode ?? "auto";
+      // lazy kick: covers a mid-session cpu→auto toggle where the
+      // startup probe never ran. fire-and-forget; the NEXT call sees it
+      if (mode === "auto" && probeResult() === null) {
+        const dir = resolveNativeDir();
+        if (dir) startProbe(dir);
+      }
+      const r = probeResult();
+      const active = deps.engine.computePath?.() ?? undefined;
+      if (mode === "cpu") {
+        return {
+          probed: r !== null,
+          status: "disabled" as const,
+          devices: [],
+          reason: "computeMode=cpu",
+          mode,
+          active,
+        };
+      }
+      return {
+        probed: r !== null,
+        status: r?.status ?? ("unavailable" as const),
+        devices: r?.devices ?? [],
+        reason: r?.reason ?? (r === null ? "probe pending" : undefined),
+        mode,
+        active,
+      };
+    },
     // feature 017: extension packs. dialogs.pickFolder/pickFile resolve
     // empty paths on folder/archive sources; null = cancelled.
     "extension.scan": () => ({ packs: extStore().scan() }),
@@ -2063,8 +2132,16 @@ async function bootstrapModel(emit: Emit): Promise<void> {
   if (!path) return;
   emit("model.progress", { phase: "loading" });
   try {
-    const res = await engine.loadModel(path);
-    emit("model.progress", { phase: "ready", detail: res.name });
+    // feature 029: preference resolved at load time (SC-005) — a
+    // persisted "cpu" must govern the startup/restore load too
+    const res = await engine.loadModel(path, {
+      computeMode: store.getSettings().computeMode,
+    });
+    emit("model.progress", {
+      phase: "ready",
+      detail: res.name,
+      compute: res.compute,
+    });
   } catch (e) {
     emit("model.progress", {
       phase: "error",
@@ -2197,6 +2274,13 @@ export function createRpc(getHost?: () => HostTarget | null) {
   };
   // bootstrap must run after a BrowserWindow attaches the rpc transport
   const start = () => {
+    // feature 029: background GPU probe, skipped entirely under
+    // computeMode:"cpu" (probe never spawned → "disabled"); cached
+    // result feeds compute.status and the load-path decision
+    if (store.getSettings().computeMode !== "cpu") {
+      const dir = resolveNativeDir();
+      if (dir) startProbe(dir);
+    }
     // feature 022: runs before bootstrapModel on purpose — when nothing
     // is configured the download is what eventually binds+loads the
     // model; with a configured path setup short-circuits to "done" and

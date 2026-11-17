@@ -71,6 +71,12 @@ jobs:
           path: ~/.cache/ccache
           key: ${{ matrix.platform }}-ccache-${{ hashFiles('src/native/shim/**', 'src/native/vendor/llama.cpp/CMakeLists.txt', 'scripts/build-native.sh', 'scripts/build-native.ps1', 'scripts/stage-native.ts') }}
           restore-keys: ${{ matrix.platform }}-ccache-
+      # feature 029: GGML_VULKAN needs glslc + Vulkan headers + SPIRV-Headers
+      # on Linux/Windows (macOS needs nothing extra — Metal ships with the OS).
+      # Enabling the Windows lane requires installing the Vulkan SDK there too.
+      - name: install vulkan sdk deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y libvulkan-dev glslc spirv-headers
       - name: build native shim
         run: ${{ matrix.native-script }}
       - name: build renderer

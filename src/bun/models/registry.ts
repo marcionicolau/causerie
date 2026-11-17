@@ -4,6 +4,7 @@
 // turn is in flight (busyFor); a slot rebound mid-flight is marked stale
 // and freed on release (D9).
 import { basename } from "node:path";
+import type { ComputeMode } from "../../shared/types";
 import { EngineError, LlamaEngine } from "../llama/engine";
 import type { EngineLike } from "../rpc/handlers";
 
@@ -56,8 +57,13 @@ export class ModelRegistry {
   }
 
   // Acquire (or share) the slot for a path. Evicts the least-recently-used
-  // non-busy slot when at capacity.
-  async acquire(path: string): Promise<ModelSlot> {
+  // non-busy slot when at capacity. opts.computeMode is forwarded into
+  // the slot's engine.loadModel — every resident model resolves the
+  // GPU/CPU policy independently (feature 029, FR-003).
+  async acquire(
+    path: string,
+    opts?: { computeMode?: ComputeMode },
+  ): Promise<ModelSlot> {
     const existing = this.slots.get(path);
     if (existing) {
       existing.lastUsedAt = Date.now();
@@ -77,7 +83,7 @@ export class ModelRegistry {
     }
     const engine = this.factory();
     try {
-      await engine.loadModel(path);
+      await engine.loadModel(path, opts);
     } catch (e) {
       engine.dispose();
       throw e;
@@ -150,9 +156,13 @@ export function createRegistryEngine(deps: RegistryEngineDeps) {
         ? { status: "ready" as const, name: s.fileName }
         : { status: "unloaded" as const };
     },
-    loadModel: async (path: string) => {
-      const slot = await deps.registry.acquire(path);
-      return { status: "ready" as const, name: slot.fileName };
+    loadModel: async (path: string, opts?: { computeMode?: ComputeMode }) => {
+      const slot = await deps.registry.acquire(path, opts);
+      return {
+        status: "ready" as const,
+        name: slot.fileName,
+        compute: slot.engine.computePath?.() ?? undefined,
+      };
     },
     unloadModel: () => {
       const p = deps.activePath();
@@ -160,6 +170,7 @@ export function createRegistryEngine(deps: RegistryEngineDeps) {
     },
     isGenerating: () => deps.registry.anyGenerating(),
     stop: () => deps.registry.stopAll(),
+    computePath: () => active()?.engine.computePath?.() ?? null,
     contextSize: () => active()?.engine.contextSize() ?? 0,
     chatTemplate: () => active()?.engine.chatTemplate() ?? null,
     tokenCount: (text: string) => active()?.engine.tokenCount(text) ?? Math.ceil(text.length / 4),

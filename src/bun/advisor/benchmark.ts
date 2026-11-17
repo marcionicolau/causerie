@@ -3,7 +3,11 @@
 // Restores the previously active model afterward.
 import { statSync } from "node:fs";
 import { basename } from "node:path";
-import type { BenchmarkRecord, GenerationParams } from "../../shared/types";
+import type {
+  BenchmarkRecord,
+  ComputeMode,
+  GenerationParams,
+} from "../../shared/types";
 import { fingerprint, saveRecord } from "./store";
 
 const PROMPT = "Explain photosynthesis in one short paragraph.";
@@ -12,7 +16,10 @@ const WALL_MS = 25_000;
 const SAMPLE_MS = 250;
 
 export interface BenchEngine {
-  loadModel(path: string): Promise<{ status: "ready"; name: string }>;
+  loadModel(
+    path: string,
+    opts?: { computeMode?: ComputeMode },
+  ): Promise<{ status: "ready"; name: string }>;
   unloadModel(): void;
   generate(
     prompt: string,
@@ -28,6 +35,7 @@ export async function runBenchmark(
   eng: BenchEngine,
   path: string,
   restorePath: string | null,
+  opts?: { computeMode?: ComputeMode },
 ): Promise<BenchmarkRecord> {
   const sizeBytes = statSync(path).size;
   const rssBefore = rss();
@@ -38,7 +46,9 @@ export async function runBenchmark(
 
   let res: { status: string; tokens: number; elapsedMs: number };
   try {
-    await eng.loadModel(path);
+    // feature 029: benchmark + restore loads obey the same compute
+    // preference as every other model load
+    await eng.loadModel(path, opts);
     const timer = setTimeout(() => eng.stop(), WALL_MS);
     try {
       res = await eng.generate(PROMPT, () => {}, {
@@ -52,7 +62,7 @@ export async function runBenchmark(
     eng.unloadModel();
     if (restorePath) {
       try {
-        await eng.loadModel(restorePath);
+        await eng.loadModel(restorePath, opts);
       } catch {
         // restore is best-effort — the benchmark record still returns
       }

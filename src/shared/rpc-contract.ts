@@ -1,6 +1,8 @@
 import type { ElectrobunRPCSchema } from "electrobun/main/rpc";
 import type {
   BenchmarkRecord,
+  ComputeMode,
+  ComputePath,
   Conversation,
   ConversationMode,
   ConversationSummary,
@@ -8,6 +10,8 @@ import type {
   FusionAdvise,
   FusionPhase,
   GenerationParams,
+  GpuDeviceInfo,
+  GpuProbeStatus,
   InstalledPackView,
   ModelAdvise,
   ModelMeta,
@@ -165,6 +169,7 @@ export interface ChatRpcSchema extends ElectrobunRPCSchema {
           themeMode: ThemeMode; // feature 021
           density: Density; // feature 026
           updates: { enabled: boolean; channel: UpdateChannel }; // feature 013
+          computeMode: ComputeMode; // feature 029
         };
       };
       "settings.set": {
@@ -184,6 +189,8 @@ export interface ChatRpcSchema extends ElectrobunRPCSchema {
           resolvedTheme?: "light" | "dark"; // feature 021
           // feature 013: update preferences
           updates?: { enabled?: boolean; channel?: UpdateChannel };
+          // feature 029: "auto"|"cpu" — takes effect on next model load
+          computeMode?: ComputeMode;
         };
         response: Record<string, never>;
       };
@@ -471,6 +478,20 @@ export interface ChatRpcSchema extends ElectrobunRPCSchema {
         params: Record<string, never>;
         response: { removed: number };
       };
+      // feature 029: cached probe state only — never synchronously
+      // probes; probed:false until the first result lands
+      "compute.status": {
+        params: Record<string, never>;
+        response: {
+          probed: boolean;
+          status: GpuProbeStatus;
+          devices: GpuDeviceInfo[];
+          reason?: string;
+          mode: ComputeMode;
+          // compute path of the currently resident model, if any
+          active?: ComputePath;
+        };
+      };
       // feature 017: extension packs (contracts/rpc.md)
       "extension.scan": {
         params: Record<string, never>;
@@ -578,6 +599,8 @@ export interface ChatRpcSchema extends ElectrobunRPCSchema {
       "model.progress": {
         phase: "loading" | "ready" | "error";
         detail?: string;
+        // feature 029: which compute path the ready load landed on
+        compute?: ComputePath;
       };
       "model.download": DownloadState;
       // feature 022: pushed on every SetupService phase transition

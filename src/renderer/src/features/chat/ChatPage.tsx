@@ -39,6 +39,7 @@ import { SetupScreen } from "../setup/SetupScreen";
 import { useSetup } from "../setup/use-setup";
 import { decideStartupPrompt } from "./startup-prompt";
 import { ToolSettings } from "../settings/ToolSettings";
+import { ComputeSettings } from "../settings/ComputeSettings";
 import { UpdatesSection } from "../settings/UpdatesSection";
 import { UpdateBanner } from "../update/UpdateBanner";
 import { DataPanel } from "../settings/DataPanel";
@@ -590,6 +591,7 @@ export function ChatPage() {
             <ScriptsSettings />
             <DataPanel />
             <UpdatesSection />
+            <ComputeSettings />
             <LayoutSection />
             <ShortcutsSection />
           </SettingsPage>

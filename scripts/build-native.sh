@@ -9,9 +9,21 @@ missing=()
 command -v bun   >/dev/null || missing+=("bun")
 command -v cmake >/dev/null || missing+=("cmake")
 command -v cc    >/dev/null || command -v c++ >/dev/null || command -v gcc >/dev/null || command -v clang >/dev/null || missing+=("c++ toolchain (gcc/clang)")
+
+# feature 029: GPU backend needs the Vulkan SDK on Linux/Windows
+# (headers + glslc shader compiler + SPIRV-Headers). macOS needs nothing
+# extra (Metal ships with the OS). CAUSERIE_GPU=off skips the requirement
+# and produces a CPU-only build.
+GPU_ARGS=()
+if [ "${CAUSERIE_GPU:-on}" != "off" ] && [ "$(uname -s)" != "Darwin" ]; then
+  command -v glslc >/dev/null || missing+=("Vulkan SDK (glslc + vulkan-headers + SPIRV-Headers) — or set CAUSERIE_GPU=off")
+fi
 if ((${#missing[@]})); then
   echo "missing prerequisite: ${missing[*]}" >&2
   exit 1
+fi
+if [ "${CAUSERIE_GPU:-on}" = "off" ]; then
+  GPU_ARGS+=(-DGGML_VULKAN=OFF)
 fi
 
 case "$(uname -s)" in
@@ -29,7 +41,7 @@ PLATFORM="${OS}-${ARCH}"
 # cmake tree lives outside native/out/ — only the staged libs are packaged
 BUILD_DIR="${ROOT}/native/build/${PLATFORM}"
 
-cmake -S "${ROOT}/src/native/shim" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release
+cmake -S "${ROOT}/src/native/shim" -B "${BUILD_DIR}" -DCMAKE_BUILD_TYPE=Release "${GPU_ARGS[@]}"
 cmake --build "${BUILD_DIR}" -j "$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
 
 bun "${ROOT}/scripts/stage-native.ts" "${BUILD_DIR}" "${ROOT}/native/out/${PLATFORM}"
