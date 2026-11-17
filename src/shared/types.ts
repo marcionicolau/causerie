@@ -215,6 +215,25 @@ export interface Settings {
   updates?: UpdatesPrefs;
   // feature 029: compute selection; undefined/absent → "auto"
   computeMode?: ComputeMode;
+  // feature 030: context size; undefined → effective 4096 everywhere
+  context?: ContextSizeSettings;
+}
+
+// feature 030: persisted under settings.json "context". Values are
+// integers 512..1_048_576; perModel keys are model file basenames and
+// win over default (data-model.md).
+export interface ContextSizeSettings {
+  default?: number;
+  perModel?: Record<string, number>;
+}
+
+// feature 030: what a load was asked for vs what it got (data-model.md)
+export interface EffectiveContext {
+  requested: number;
+  effective: number;
+  source: "default" | "global" | "model";
+  clamp: "model-maximum" | null;
+  fallback: { reason: "memory" } | null;
 }
 
 // ---- feature 029: CPU/GPU compute path ----

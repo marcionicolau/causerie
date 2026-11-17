@@ -7,7 +7,9 @@ import type {
   BenchmarkRecord,
   ComputeMode,
   ComputePath,
+  ContextSizeSettings,
   Conversation,
+  EffectiveContext,
   FusionAdvise,
   GenerationParams,
   Message,
@@ -27,6 +29,10 @@ import type {
 } from "../../shared/types";
 import { DEFAULT_GENERATION } from "../../shared/types";
 import { EngineError } from "../llama/engine";
+import {
+  isValidContextSize,
+  resolveContextSize,
+} from "../llama/context-size";
 import { probeResult, startProbe } from "../llama/gpu";
 import { resolveNativeDir } from "../llama/ffi";
 import { mergeParams, validateParams } from "../llama/params";
@@ -125,8 +131,18 @@ export interface EngineLike {
   // absent means the engine default ("auto")
   loadModel(
     path: string,
-    opts?: { computeMode?: ComputeMode },
-  ): Promise<{ status: "ready"; name: string; compute?: ComputePath }>;
+    opts?: { computeMode?: ComputeMode; contextSize?: number },
+  ): Promise<{
+    status: "ready";
+    name: string;
+    compute?: ComputePath;
+    // feature 030: absent on fakes — the real engine always reports it
+    context?: {
+      requested: number;
+      effective: number;
+      fallback: { reason: "memory" } | null;
+    };
+  }>;
   unloadModel(): void;
   // feature 029: compute path that served the current load (fakes omit)
   computePath?(): ComputePath | null;
@@ -305,6 +321,22 @@ export function createRequestHandlers(deps: HandlerDeps) {
     };
     return snap;
   };
+
+  // feature 030: context-size resolution — settings give the request,
+  // the model's GGUF meta (contextTrain) gives the clamp
+  const trainCtxFor = (path: string): number | null =>
+    scanModels().find((m) => m.path === path)?.contextTrain ?? null;
+  const ctxResolveFor = (path: string): Omit<EffectiveContext, "fallback"> =>
+    resolveContextSize(
+      deps.store.getSettings().context,
+      basename(path),
+      trainCtxFor(path),
+    );
+  const ctxRequestedFor = (path: string): number =>
+    ctxResolveFor(path).requested;
+  // last completed load's effective context — surfaced via model.status
+  // and the model.progress "ready" event (FR-009)
+  let lastContext: { path: string; context: EffectiveContext } | null = null;
 
   const persist = (conv: Conversation) => deps.store.saveConversation(conv);
 
@@ -863,13 +895,29 @@ export function createRequestHandlers(deps: HandlerDeps) {
       deps.emit("model.progress", { phase: "loading" });
       void (async () => {
         try {
+          // feature 030: resolve requested size now; effective/clamp come
+          // back from the engine's actual context
+          const resolved = ctxResolveFor(path);
           const res = await deps.engine.loadModel(path, {
             computeMode: deps.store.getSettings().computeMode,
+            contextSize: resolved.requested,
           });
+          const context: EffectiveContext = {
+            requested: resolved.requested,
+            effective: res.context?.effective ?? 4096,
+            source: resolved.source,
+            clamp: resolved.clamp,
+            fallback: res.context?.fallback ?? null,
+          };
+          lastContext = { path, context };
           deps.emit("model.progress", {
             phase: "ready",
-            detail: res.name,
+            detail:
+              context.fallback !== null
+                ? `${res.name} — context fell back to 4096 (memory)`
+                : res.name,
             compute: res.compute,
+            context,
           });
           if (deps.roles) {
             // bind("default") also syncs activeModelPath (FR-010)
@@ -890,6 +938,7 @@ export function createRequestHandlers(deps: HandlerDeps) {
     },
     "model.unload": () => {
       deps.engine.unloadModel();
+      lastContext = null;
       if (deps.roles) {
         deps.roles.bind("default", null);
         deps.emit("role.changed", { name: "default" });
@@ -910,7 +959,12 @@ export function createRequestHandlers(deps: HandlerDeps) {
       });
       return { path: paths[0] ?? null };
     },
-    "model.status": () => deps.engine.status(),
+    "model.status": () => {
+      const s = deps.engine.status();
+      return s.status === "ready" && lastContext !== null
+        ? { ...s, context: lastContext.context }
+        : s;
+    },
     "model.list": () => ({ models: scanModels() }),
     // feature 011: bounded benchmark — single-flight gated, swaps and
     // restores the active model; record persists keyed by fingerprint
@@ -1083,6 +1137,7 @@ export function createRequestHandlers(deps: HandlerDeps) {
       plannerTag,
       executorTag,
       attachmentIds,
+      force,
     }: {
       conversationId: string;
       content: string;
@@ -1091,6 +1146,7 @@ export function createRequestHandlers(deps: HandlerDeps) {
       plannerTag?: string;
       executorTag?: string;
       attachmentIds?: string[];
+      force?: boolean;
     }) => {
       const text = content.trim();
       if (!text) fail("EMPTY_MESSAGE", "message must not be empty");
@@ -1131,6 +1187,26 @@ export function createRequestHandlers(deps: HandlerDeps) {
 
       const leaf = leafOf(conv);
       const attCtx = buildAttachmentContext(attachmentIds, text);
+
+      // feature 030 (FR-013): the newest message alone must fit the
+      // effective context minus a small reserve for the answer; refuse
+      // silently truncating it — the client can retry with force:true
+      // (dialog: raise the size or send anyway). Nothing was stored yet.
+      if (!force) {
+        const effective = deps.engine.contextSize();
+        if (effective > 0) {
+          const neededTokens =
+            deps.engine.tokenCount(attCtx?.current ?? text) + 64;
+          if (neededTokens > effective) {
+            return {
+              error: "message_exceeds_context" as const,
+              neededTokens,
+              effective,
+            };
+          }
+        }
+      }
+
       const userMsg: Message = {
         id: userMessageId ?? newId(),
         conversationId,
@@ -1456,6 +1532,8 @@ export function createRequestHandlers(deps: HandlerDeps) {
         },
         // feature 029: absent → "auto"
         computeMode: s.computeMode ?? "auto",
+        // feature 030: sanitised on load; absent → effective 4096
+        ...(s.context ? { context: s.context } : {}),
       };
     },
     "settings.set": ({
@@ -1469,6 +1547,7 @@ export function createRequestHandlers(deps: HandlerDeps) {
       resolvedTheme: resolvedPatch,
       updates: updatesPatch,
       computeMode,
+      context: contextPatch,
     }: {
       generation?: Partial<GenerationParams>;
       outputPanel?: boolean;
@@ -1483,6 +1562,10 @@ export function createRequestHandlers(deps: HandlerDeps) {
       resolvedTheme?: "light" | "dark";
       updates?: { enabled?: boolean; channel?: UpdateChannel };
       computeMode?: ComputeMode;
+      context?: {
+        default?: number | null;
+        perModel?: Record<string, number | null>;
+      };
     }) => {
       const err =
         (generation ? validateParams(generation) : null) ??
@@ -1500,6 +1583,46 @@ export function createRequestHandlers(deps: HandlerDeps) {
           fail("INVALID_PARAMS", `unknown compute mode: ${computeMode}`);
         }
         next.computeMode = computeMode;
+      }
+      // feature 030: context patch; null removes a level. Values are
+      // validated here — a bad value is a typed error, not a silent drop
+      if (contextPatch !== undefined) {
+        const cur = s.context ?? {};
+        const nextCtx: ContextSizeSettings = {
+          ...(cur.default !== undefined ? { default: cur.default } : {}),
+          ...(cur.perModel ? { perModel: { ...cur.perModel } } : {}),
+        };
+        if (contextPatch.default !== undefined) {
+          if (contextPatch.default === null) {
+            delete nextCtx.default;
+          } else if (!isValidContextSize(contextPatch.default)) {
+            fail(
+              "INVALID_PARAMS",
+              `context size must be an integer 512..1048576 (got ${contextPatch.default})`,
+            );
+          } else {
+            nextCtx.default = contextPatch.default;
+          }
+        }
+        for (const [k, v] of Object.entries(contextPatch.perModel ?? {})) {
+          if (v === null) {
+            delete nextCtx.perModel?.[k];
+          } else if (!isValidContextSize(v)) {
+            fail(
+              "INVALID_PARAMS",
+              `context size for "${k}" must be an integer 512..1048576 (got ${v})`,
+            );
+          } else {
+            (nextCtx.perModel ??= {})[k] = v;
+          }
+        }
+        if (nextCtx.perModel && Object.keys(nextCtx.perModel).length === 0) {
+          delete nextCtx.perModel;
+        }
+        next.context =
+          nextCtx.default === undefined && nextCtx.perModel === undefined
+            ? undefined
+            : nextCtx;
       }
       if (themeMode !== undefined) {
         if (themeMode !== "light" && themeMode !== "dark" && themeMode !== "system") {

@@ -17,6 +17,7 @@ import type {
   Settings,
 } from "../../shared/types";
 import { DEFAULT_GENERATION } from "../../shared/types";
+import { sanitizeContextSettings } from "../llama/context-size";
 import { conversationsDir, settingsFile } from "./paths";
 
 const ID_RE = /^[\w-]+$/;
@@ -76,6 +77,8 @@ export function getSettings(): Settings {
       generation: { ...DEFAULT_GENERATION, ...parsed.generation },
       modelOverrides: parsed.modelOverrides ?? {},
       tags: parsed.tags ?? [],
+      // feature 030: invalid persisted values fall back to the default
+      context: sanitizeContextSettings(parsed.context),
     };
     return { ...merged, tags: provisionTags(merged) };
   } catch {
