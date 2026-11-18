@@ -147,6 +147,20 @@ publishes a GitHub Release:
 | `APP_DATA_DIR` | override the app-data root (store, snapshots, attachments) |
 | `RELEASE_CHANNEL` | `canary` (default) or `stable` — version suffix + update channel |
 | `VITE_DEV_URL` | dev-mode renderer URL (set by `bun run dev`) |
+| `WEBKIT_DISABLE_DMABUF_RENDERER` | Linux only — set to `0`/`1` explicitly to override the automatic NVIDIA + Wayland workaround (the app defaults it to `1` when the `nvidia` module is loaded on a Wayland session; see Troubleshooting) |
+
+### Troubleshooting
+
+**Blank window on Linux (NVIDIA + Wayland)** — WebKitGTK's dmabuf renderer
+fails to allocate GBM buffers on some NVIDIA/Wayland setups
+(`Failed to create GBM buffer` in the log; window shows a title bar and an
+empty body). The app detects this combination and sets
+`WEBKIT_DISABLE_DMABUF_RENDERER=1` automatically. If you still see a blank
+window, launch with the variable set explicitly:
+
+```sh
+WEBKIT_DISABLE_DMABUF_RENDERER=1 ./bin/launcher
+```
 
 ## Project layout
 
