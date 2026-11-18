@@ -31,9 +31,12 @@ const READY: ReadonlySet<string> = new Set([
   "applying",
   "extracting",
   "replacing-app",
-  "launching-new-version",
-  "complete",
 ]);
+
+// "launching-new-version"/"complete" are apply-terminal statuses — the
+// devkit replays them when the NEW version boots, so a fresh launch must
+// NOT map them to "ready" or the banner reappears with a dead Restart
+// button (issue #56). They fall through to "idle" and are ignored.
 
 export function mapStatus(s: string): UpdateStatus {
   if (s === "checking" || s === "check-complete") return "checking";

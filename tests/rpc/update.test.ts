@@ -168,3 +168,42 @@ describe("updates settings", () => {
 
 // the real devkit Updater satisfies UpdaterLike structurally; tests
 // inject the UpdateServiceLike stubs above
+
+describe("relaunch after applied update (issue #56)", () => {
+  test("replayed apply-terminal statuses keep status idle + apply errors", async () => {
+    const { UpdateService } = await import("../../src/bun/updater/service");
+    let cb: ((e: { status: string; message: string }) => void) | null = null;
+    const updater = {
+      getLocalInfo: async () => ({
+        version: "0.0.1-rc.8-canary.77",
+        hash: "h", baseUrl: "http://localhost:8787",
+        channel: "canary", name: "causerie", identifier: "causerie",
+      }),
+      checkForUpdate: async () => ({
+        version: "0.0.1-rc.8-canary.77", hash: "h",
+        updateAvailable: false, updateReady: false, error: "",
+      }),
+      downloadUpdate: async () => {},
+      applyUpdate: async () => {},
+      updateInfo: () => ({
+        version: "0.0.1-rc.8-canary.77", hash: "h",
+        updateAvailable: false, updateReady: false, error: "",
+      }),
+      onStatusChange: (c: typeof cb) => void (cb = c),
+    };
+    const svc = new UpdateService({
+      updater,
+      getSettings: () => ({}) as Settings,
+      emit: () => {},
+    });
+    // devkit replays the finished transaction on the updated process
+    for (const s of ["applying", "replacing-app", "launching-new-version", "complete"]) {
+      cb?.({ status: s, message: s });
+    }
+    expect(svc.state().status).toBe("idle");
+    // and the stale "Restart to update" action still fails cleanly
+    await expect(svc.apply()).rejects.toMatchObject({
+      code: "UPDATE_FAILED",
+    });
+  });
+});

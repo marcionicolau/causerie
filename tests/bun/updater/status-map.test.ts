@@ -42,10 +42,15 @@ describe("mapStatus", () => {
       "applying",
       "extracting",
       "replacing-app",
-      "launching-new-version",
-      "complete",
     ]) {
       expect(mapStatus(s)).toBe("ready");
+    }
+  });
+  test("apply-terminal statuses → idle on relaunch (issue #56)", () => {
+    // replayed by the devkit when the updated process boots — must not
+    // re-show the ready banner
+    for (const s of ["launching-new-version", "complete"]) {
+      expect(mapStatus(s)).toBe("idle");
     }
   });
   test("failure statuses → error", () => {

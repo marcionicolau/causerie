@@ -66,6 +66,11 @@ export class UpdateService {
     deps.updater.onStatusChange((entry) => {
       const r = reduceEntry(entry);
       if (r.status === "idle" && !r.errorCode) return;
+      // issue #56: on relaunch the devkit replays apply-phase statuses, but
+      // updateReady is already false — a "ready" claim with nothing staged
+      // is a stale echo, not a banner
+      if (r.status === "ready" && !deps.updater.updateInfo().updateReady)
+        return;
       this.view = {
         ...this.view,
         status: r.status === "idle" ? this.view.status : r.status,
