@@ -2,7 +2,8 @@
 // runtime (research D2). Bun.spawn keeps a runner process alive; the
 // runner's persistent namespace IS the session. Crash containment is
 // structural — a fault in user code kills the child, never the host.
-import { existsSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ScriptRuntimeKind, SessionInfo } from "../../../shared/types";
 import type {
@@ -192,12 +193,45 @@ export class SubprocessBackend implements ScriptBackend {
         "script session is not running",
       );
     }
+    // feature 028 (T004): read + hash the path ourselves — fingerprint
+    // parity with the host path (read-then-run race persists on this
+    // fallback path by design, FR-019 = "no loss of function")
+    let code: string;
+    let contentSha256: string | undefined;
+    try {
+      code = readFileSync(req.path, "utf8");
+      contentSha256 = createHash("sha256").update(code, "utf8").digest("hex");
+    } catch {
+      return {
+        outcome: "source_missing",
+        exitStatus: null,
+        stdout: "",
+        stderr: `script source unavailable: ${req.path}`,
+        durationMs: 0,
+        files: [],
+        sessionRestarted: false,
+        method: "subprocess",
+      };
+    }
+    if (req.expectedFingerprint && contentSha256 !== req.expectedFingerprint) {
+      return {
+        outcome: "content_changed",
+        exitStatus: null,
+        stdout: "",
+        stderr: "script content changed since approval",
+        durationMs: 0,
+        files: [],
+        sessionRestarted: false,
+        contentSha256,
+        method: "subprocess",
+      };
+    }
     const id = ++this.seq;
     const started = performance.now();
     const line =
       JSON.stringify({
         id,
-        code: req.code,
+        code,
         args: req.args,
         input: req.input ?? null,
         cwd: req.cwd,
@@ -246,12 +280,18 @@ export class SubprocessBackend implements ScriptBackend {
     if (info) this.setInfo(rt, { calls: info.calls + 1 });
 
     return {
+      outcome: resp.ok ? "ok" : "error",
       exitStatus: resp.ok ? 0 : 1,
       stdout: resp.stdout + (resp.result ? resp.result + "\n" : "") || "",
       stderr: resp.stderr + (resp.error ? resp.error + "\n" : ""),
       durationMs,
       files: resp.files.filter((f) => existsSyncSafe(req.cwd, f)),
       sessionRestarted: false,
+      contentSha256,
+      error: resp.ok
+        ? undefined
+        : { type: "ScriptError", message: resp.error ?? "script failed" },
+      method: "subprocess",
     };
   }
 

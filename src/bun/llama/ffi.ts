@@ -30,7 +30,7 @@ function candidates(): string[] {
 
 // feature 029: native staging dirs in probe order — lls_probe and the
 // gpu/ backend subdir resolve from the same candidates as the shim
-function nativeDirs(): string[] {
+export function nativeDirs(): string[] {
   const plat = platformDir();
   const list: string[] = [];
   if (process.env.LLAMA_NATIVE_DIR) {

@@ -17,9 +17,9 @@ const MODES: { value: ScriptPolicy["mode"]; label: string; hint: string }[] = [
 ];
 
 const BACKENDS = [
-  { value: "auto", label: "Auto (subprocess)" },
+  { value: "auto", label: "Auto" },
+  { value: "host", label: "Host session (isolated process)" },
   { value: "subprocess", label: "Subprocess session" },
-  { value: "embedded", label: "Embedded (prototype — may crash app)" },
 ] as const;
 
 const KINDS: { kind: ScriptRuntimeKind; label: string }[] = [
