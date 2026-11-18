@@ -1,6 +1,10 @@
 // Main-process entrypoint: window bootstrap + RPC registration.
+// must run before the webview spawns (issue #55: NVIDIA+Wayland GBM blank)
+import { applyLinuxWebviewEnv } from "./linux-webkit-env";
 import { BrowserWindow } from "electrobun/main/browser-window";
 import { createRpc } from "./rpc/handlers";
+
+applyLinuxWebviewEnv();
 
 const DEV_URL = process.env.VITE_DEV_URL;
 const url = DEV_URL ?? "views://main/index.html";
