@@ -47,6 +47,80 @@ export function resolveInterpreter(
   return { path, configured, detected };
 }
 
+// ---------- feature 028 (T015): host-mode runtime probe ----------
+// One probe per interpreter path — the shared runtime lib (libpython≥3.14
+// / libR) is what the embedded module dlopens. hostUsable=false carries a
+// machine-readable reason ("python-3.11", "no-libpython", "no-libR").
+
+export interface HostProbe {
+  usable: boolean;
+  libPath: string | null;
+  reason?: string;
+}
+
+const probeCache = new Map<string, HostProbe>();
+
+function probePythonLib(interpreter: string): HostProbe {
+  const probe = Bun.spawnSync({
+    cmd: [
+      interpreter,
+      "-c",
+      "import sysconfig,sys,json;" +
+        "print(json.dumps({'lib':sysconfig.get_config_var('LIBDIR')," +
+        "'so':sysconfig.get_config_var('INSTSONAME')," +
+        "'ver':list(sys.version_info[:2])}))",
+    ],
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  if (probe.exitCode !== 0) return { usable: false, libPath: null, reason: "probe-failed" };
+  try {
+    const info = JSON.parse(new TextDecoder().decode(probe.stdout).trim()) as {
+      lib?: string; so?: string; ver?: number[];
+    };
+    const maj = info.ver?.[0] ?? 0;
+    const min = info.ver?.[1] ?? 0;
+    if (maj < 3 || (maj === 3 && min < 14)) {
+      return { usable: false, libPath: null, reason: `python-${maj}.${min}` };
+    }
+    const libPath = info.lib && info.so ? `${info.lib}/${info.so}` : null;
+    if (!libPath || !existsSync(libPath)) {
+      return { usable: false, libPath: null, reason: "no-libpython" };
+    }
+    return { usable: true, libPath };
+  } catch {
+    return { usable: false, libPath: null, reason: "probe-failed" };
+  }
+}
+
+function probeRLib(): HostProbe {
+  const script = Bun.which("Rscript");
+  if (!script) return { usable: false, libPath: null, reason: "no-rscript" };
+  const probe = Bun.spawnSync({
+    cmd: [script, "-e", "cat(file.path(R.home('lib'),'libR.so'))"],
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  const libPath = new TextDecoder().decode(probe.stdout).trim();
+  if (probe.exitCode !== 0 || !existsSync(libPath)) {
+    return { usable: false, libPath: null, reason: "no-libR" };
+  }
+  return { usable: true, libPath };
+}
+
+export function probeHostRuntime(
+  kind: ScriptRuntimeKind,
+  interpreterPath: string,
+): HostProbe {
+  const key = `${kind}:${interpreterPath}`;
+  let p = probeCache.get(key);
+  if (!p) {
+    p = kind === "python" ? probePythonLib(interpreterPath) : probeRLib();
+    probeCache.set(key, p);
+  }
+  return p;
+}
+
 export function runtimeStatus(
   kind: ScriptRuntimeKind,
   policy?: ScriptPolicy,

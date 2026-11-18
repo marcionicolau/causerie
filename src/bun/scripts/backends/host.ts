@@ -2,7 +2,7 @@
 // runtime, NDJSON protocol v1 over pipes (contracts/protocol.md).
 // The host dlopens the language module (libcz_python/libcz_r); script
 // faults kill only the host, never the app (SC-002/FR-010).
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { ScriptRuntimeKind, SessionInfo } from "../../../shared/types";
 import type {
@@ -43,6 +43,8 @@ function modulePath(rt: ScriptRuntimeKind): string | null {
 // runtimes.ts probe feeds this from sysconfig (None → host unavailable)
 export interface HostDeps {
   libPath?: (rt: ScriptRuntimeKind, interpreterPath: string) => string | null;
+  hostPath?: () => string | null;     // test seam: fake cz-host
+  modulePathFor?: (rt: ScriptRuntimeKind) => string | null;
 }
 
 interface Waiter {
@@ -66,6 +68,7 @@ interface HostResponse {
   stdout?: string;
   stderr?: string;
   files?: string[];
+  fdOutput?: string;
   truncated?: boolean;
   content_sha256?: string;
   duration_ms?: number;
@@ -118,13 +121,10 @@ export class HostBackend implements ScriptBackend {
             } catch {
               continue; // stray module output — diagnostics, not protocol
             }
-            const w = session.waiters.get(
-              (resp as { ready?: boolean }).ready === true
-                ? "__ready__"
-                : resp.id,
-            );
+            const ready = (resp as { ready?: boolean }).ready === true;
+            const w = session.waiters.get(ready ? "__ready__" : resp.id);
             if (w) {
-              session.waiters.delete(resp.id);
+              session.waiters.delete(ready ? "__ready__" : resp.id);
               w.killTiers?.forEach(clearTimeout);
               clearTimeout(w.timeout);
               w.resolve(resp);
@@ -182,13 +182,23 @@ export class HostBackend implements ScriptBackend {
     }
   }
 
+  private interpreters = new Map<ScriptRuntimeKind, string>();
+
   async ensure(rt: ScriptRuntimeKind, interpreterPath: string): Promise<void> {
+    // configured interpreter changed → the live host runs the old one
+    const prevInterp = this.interpreters.get(rt);
+    if (prevInterp !== undefined && prevInterp !== interpreterPath) {
+      const stale = this.sessions.get(rt);
+      if (stale) this.drop(rt, stale);
+      this.interpreters.delete(rt);
+    }
     const cur = this.sessions.get(rt);
     if (cur && cur.proc.exitCode === null) return;
     if (cur) this.drop(rt, cur);
+    this.interpreters.set(rt, interpreterPath);
 
-    const bin = hostBin();
-    const mod = modulePath(rt);
+    const bin = this.deps.hostPath?.() ?? hostBin();
+    const mod = this.deps.modulePathFor?.(rt) ?? modulePath(rt);
     if (!bin || !mod) {
       throw new BackendUnavailable(
         "runtime-unavailable",
@@ -204,7 +214,7 @@ export class HostBackend implements ScriptBackend {
     }
 
     this.setInfo(rt, { state: "starting" });
-    const prev = this.info.get(rt)?.restartCount ?? 0;
+    mkdirSync(scriptRunsDir(), { recursive: true });
     const proc = Bun.spawn(
       [bin, "--module", mod, "--interpreter", interpreterPath, "--lib", lib],
       {
@@ -257,7 +267,7 @@ export class HostBackend implements ScriptBackend {
     }
     this.setInfo(rt, {
       state: "live",
-      restartCount: cur || prev > 0 ? prev + 1 : prev,
+      restartCount: cur ? (this.info.get(rt)?.restartCount ?? 0) + 1 : 0,
     });
   }
 
@@ -344,6 +354,7 @@ export class HostBackend implements ScriptBackend {
       : (resp.outcome ?? "host_fault");
     const stderr =
       (resp.stderr ?? "") +
+      (resp.fdOutput ? `\n${resp.fdOutput}` : "") +
       (resp.truncated ? "\n[output truncated]" : "");
     return {
       outcome: outcome as ScriptCallResult["outcome"],
@@ -354,7 +365,7 @@ export class HostBackend implements ScriptBackend {
       stderr,
       durationMs: resp.duration_ms ?? durationMs,
       files: resp.files ?? [],
-      sessionRestarted: false,
+      sessionRestarted: timedOut,
       contentSha256: resp.content_sha256,
       error: resp.error
         ? {

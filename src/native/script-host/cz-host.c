@@ -326,8 +326,10 @@ static void req_field(const char *key, const char *v, const char *vend, void *u)
     struct lim { host_req *r; } lim = {r};
     void lf(const char *k, const char *vv, const char *ve, void *uu) {
       struct lim *l = uu;
-      if (!strcmp(k, "memBytes")) l->r->mem_bytes = (uint64_t)js_number(vv, ve);
-      else if (!strcmp(k, "outputBytes")) l->r->output_bytes = (uint64_t)js_number(vv, ve);
+      if (!strcmp(k, "mem_bytes") || !strcmp(k, "memBytes"))
+        l->r->mem_bytes = (uint64_t)js_number(vv, ve);
+      else if (!strcmp(k, "output_bytes") || !strcmp(k, "outputBytes"))
+        l->r->output_bytes = (uint64_t)js_number(vv, ve);
     }
     js_object(v, vend, lf, &lim);
   }

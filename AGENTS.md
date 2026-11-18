@@ -505,13 +505,25 @@ draft-side; `MessageList` renders `Message.attachments` chips (`·trunc` /
   `tool-audit.jsonl`), `backends/subprocess.ts` (NDJSON stdio runners
   `runners/python_runner.py`/`r_runner.R`, per-run workdirs under
   `dataDir()/script-runs/<runId>/`, env allowlist — never `process.env`).
-- `backends/embedded.ts` + `embedded-worker.ts` + `native/shim/script_shim.c`
-  = mechanism-(a) prototype (FR-024, contract-identical). Benchmark
-  verdict in `specs/023-python-r-scripts/benchmark.md`: **subprocess is
-  production** — embedded Python SIGSEGVs the host on faults, embedded R
-  can't init on a worker thread. `backend:"auto"` → subprocess; the shim
-  isn't staged by `scripts/stage-native.ts` so embedded fails closed in
-  packaged builds.
+- `backends/host.ts` + `src/native/script-host/` (feature 028): the
+  embedded prototype is replaced by a supervised `cz-host` process that
+  dlopens `libcz_python.so` / `libcz_r.so` (ABI v1, `cz_script.h`) and
+  speaks NDJSON protocol v1 — run-by-path with `expected_sha256`
+  fingerprints, structured outcomes, fd-level + in-language output
+  capture, RLIMIT_AS, SIGINT→`cz_interrupt`→TERM→KILL escalation,
+  `setsid`+`PR_SET_PDEATHSIG`. `router.ts` (`RoutedSessions`) picks per
+  call: `auto` → host when `probeHostRuntime` is usable else subprocess;
+  host `BackendUnavailable` retries subprocess once (FR-019) with a
+  one-time `chat.warning` toast; `host`/`subprocess` pin; stored
+  `"embedded"` migrates to `auto`. `runtimes.ts` probe: sysconfig
+  LIBDIR+INSTSONAME + Python ≥3.14 / `R.home('lib')/libR.so`; changing
+  the interpreter resets that runtime's host. Gotcha: Fedora's
+  libpython3.14 segfaults in `Py_InitializeFromInitConfig`
+  (PyImport_ExtendInittab) — module defaults to `Py_Initialize` + env
+  isolation; `CZ_PY_INITCONFIG=1` opts into the PEP 741 path. Another:
+  `PyList_New(n)` prefills NULL slots — use `List_New(0)`+append; and
+  `Unicode_AsUTF8(non-str)` leaves a pending TypeError that fails the
+  NEXT eval — accessor helpers must clear it.
 - Chat: ```` ```tool_call ```` `{"tool":"run_script","script","args"|"input"}`;
   same pending→`tool.update`/`tool.respond` consent as file tools
   (initiator `"model"`, ns = conversationId). Prompt listing via

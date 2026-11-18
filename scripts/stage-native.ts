@@ -16,6 +16,9 @@ if (!buildDir || !outDir) {
 
 const gpuPattern = /ggml-(vulkan|metal|opencl|sycl|cuda|hip|rpc)[^/\\]*\.(so|dylib|dll)/i;
 const probePattern = /^lls_probe(\.exe)?$/;
+// feature 028: script host + language modules stage beside the llama shim
+const hostPattern = /^cz-host(\.exe)?$/;
+const modulePattern = /^libcz_[^/\\]*\.(so|dylib|dll)$/;
 
 const patterns = [
   /^libllama_shim\.(so|dylib|dll)$/,
@@ -38,7 +41,9 @@ function scan(dir: string): string[] {
     } else if (
       patterns.some((re) => re.test(entry.name)) ||
       gpuPattern.test(entry.name) ||
-      probePattern.test(entry.name)
+      probePattern.test(entry.name) ||
+      hostPattern.test(entry.name) ||
+      modulePattern.test(entry.name)
     ) {
       found.push(full);
     }
