@@ -2,6 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   applyLinuxWebviewEnv,
+  libcSetenv,
   needsDmabufWorkaround,
 } from "../../src/bun/linux-webkit-env";
 
@@ -67,20 +68,71 @@ describe("needsDmabufWorkaround", () => {
 });
 
 describe("applyLinuxWebviewEnv", () => {
-  test("sets the variable on a matching env", () => {
-    const env = { ...wayland, XDG_SESSION_TYPE: "wayland" };
-    // predicate depends on process.platform; assert via injected env only
-    // when the platform matches — otherwise just check no mutation
-    const before = env.WEBKIT_DISABLE_DMABUF_RENDERER;
-    applyLinuxWebviewEnv(env as NodeJS.ProcessEnv);
-    if (process.platform === "linux") {
-      // on this linux dev box the nvidia probe may or may not hit; only
-      // assert the value is a string if set
-      if (env.WEBKIT_DISABLE_DMABUF_RENDERER !== undefined)
-        expect(env.WEBKIT_DISABLE_DMABUF_RENDERER).toBe("1");
-      else expect(before).toBeUndefined();
-    } else {
-      expect(env.WEBKIT_DISABLE_DMABUF_RENDERER).toBeUndefined();
-    }
+  const probe = { platform: "linux", moduleLoaded: nvidia };
+
+  test("matching env: sets process env AND the C environment", () => {
+    const env: NodeJS.ProcessEnv = { ...wayland };
+    const calls: [string, string][] = [];
+    const ok = applyLinuxWebviewEnv(
+      env,
+      (n, v) => (calls.push([n, v]), true),
+      probe,
+    );
+    expect(ok).toBe(true);
+    expect(env.WEBKIT_DISABLE_DMABUF_RENDERER).toBe("1");
+    expect(calls).toEqual([["WEBKIT_DISABLE_DMABUF_RENDERER", "1"]]);
+  });
+
+  test("no workaround needed: nothing is set anywhere", () => {
+    const env: NodeJS.ProcessEnv = { ...wayland };
+    const calls: [string, string][] = [];
+    const ok = applyLinuxWebviewEnv(
+      env,
+      (n, v) => (calls.push([n, v]), true),
+      { platform: "linux", moduleLoaded: noNvidia },
+    );
+    expect(ok).toBe(false);
+    expect(env.WEBKIT_DISABLE_DMABUF_RENDERER).toBeUndefined();
+    expect(calls).toEqual([]);
+  });
+
+  test("an explicit user value is left alone in both environments", () => {
+    const env: NodeJS.ProcessEnv = {
+      ...wayland,
+      WEBKIT_DISABLE_DMABUF_RENDERER: "0",
+    };
+    const calls: [string, string][] = [];
+    applyLinuxWebviewEnv(env, (n, v) => (calls.push([n, v]), true), probe);
+    expect(env.WEBKIT_DISABLE_DMABUF_RENDERER).toBe("0");
+    expect(calls).toEqual([]);
+  });
+
+  test("a failing native setenv does not break startup", () => {
+    const env: NodeJS.ProcessEnv = { ...wayland };
+    expect(applyLinuxWebviewEnv(env, () => false, probe)).toBe(true);
+    expect(env.WEBKIT_DISABLE_DMABUF_RENDERER).toBe("1");
+  });
+});
+
+// The reason for the native call (issue #55): Bun's process.env is not libc's environ.
+describe.skipIf(process.platform !== "linux")("libcSetenv (real libc)", () => {
+  const getenv = (name: string): string | null => {
+    const { dlopen, FFIType, CString } = require("bun:ffi") as typeof import("bun:ffi");
+    const libc = dlopen("libc.so.6", {
+      getenv: { args: [FFIType.cstring], returns: FFIType.ptr },
+    });
+    const p = libc.symbols.getenv(Buffer.from(`${name}\0`));
+    return p ? String(new CString(p)) : null;
+  };
+
+  test("a process.env assignment alone is invisible to getenv", () => {
+    process.env.CZ_TEST_ONLY_PROCESS_ENV = "x";
+    expect(getenv("CZ_TEST_ONLY_PROCESS_ENV")).toBeNull();
+    delete process.env.CZ_TEST_ONLY_PROCESS_ENV;
+  });
+
+  test("libcSetenv makes the value visible to getenv", () => {
+    expect(libcSetenv("CZ_TEST_LIBC_SETENV", "1")).toBe(true);
+    expect(getenv("CZ_TEST_LIBC_SETENV")).toBe("1");
   });
 });
