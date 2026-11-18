@@ -631,8 +631,12 @@ export interface ChatRpcSchema extends ElectrobunRPCSchema {
       // feature 022: pushed on every SetupService phase transition
       "setup.status": SetupState;
       "chat.warning": {
-        messageId: string;
-        code: "CONTEXT_TRUNCATED" | "ATTACHMENTS_BUDGET" | "TOOL_BUDGET";
+        messageId?: string;
+        code:
+          | "CONTEXT_TRUNCATED"
+          | "ATTACHMENTS_BUDGET"
+          | "TOOL_BUDGET"
+          | "SCRIPT_BACKEND_FALLBACK";
         message: string;
       };
       // feature 016: emitted after each recorded call when enabled

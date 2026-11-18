@@ -41,9 +41,7 @@ import { runToolLoop } from "../tools/loop";
 import { ToolService } from "../tools/service";
 import { ScriptService } from "../scripts/service";
 import { ScriptStore } from "../scripts/store";
-import { SessionManager } from "../scripts/session";
-import { SubprocessBackend } from "../scripts/backends/subprocess";
-import { HostBackend } from "../scripts/backends/host";
+import { RoutedSessions } from "../scripts/router";
 import { resolveInterpreter } from "../scripts/runtimes";
 import { modelsDir, scanModels } from "../models/library";
 import {
@@ -280,20 +278,22 @@ export function createRequestHandlers(deps: HandlerDeps) {
   const tools = () =>
     (toolsSvc ??=
       deps.tools ?? new ToolService({ getSettings: () => deps.store.getSettings() }));
-  // feature 023: lazily built like tools(); backend kind from policy
-  // ("auto" → subprocess per the FR-023 benchmark decision)
+  // feature 028 (T016): RoutedSessions picks host/subprocess per call —
+  // "auto" prefers the native host and falls back under FR-019
   let scriptsSvc: ScriptService | null = null;
   const scripts = () =>
     (scriptsSvc ??=
       deps.scripts ??
       new ScriptService({
         store: new ScriptStore(),
-        sessions: new SessionManager({
-          backendFactory: () =>
-            scriptsSvc!.policy().backend === "host"
-              ? new HostBackend()
-              : new SubprocessBackend(),
+        sessions: new RoutedSessions({
+          getPolicy: () => scriptsSvc!.policy(),
           emit: (e) => deps.emit("session.state", e),
+          notifyFallback: (reason) =>
+            deps.emit("chat.warning", {
+              code: "SCRIPT_BACKEND_FALLBACK",
+              message: `script host unavailable (${reason}) — running via subprocess`,
+            }),
         }),
         getSettings: () => deps.store.getSettings(),
         emitRun: (e) => deps.emit("script.run", e),

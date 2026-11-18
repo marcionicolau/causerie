@@ -33,8 +33,9 @@ class FakeBackend implements ScriptBackend {
   async call(_r: "python" | "r", req: ScriptCallRequest): Promise<ScriptCallResult> {
     this.calls.push(req);
     return {
+      outcome: "ok",
       exitStatus: 0,
-      stdout: `ran:${req.code}`,
+      stdout: `ran:${req.path}`,
       stderr: "",
       durationMs: 3,
       files: [],

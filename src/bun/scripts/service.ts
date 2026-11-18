@@ -68,7 +68,10 @@ export class ScriptService {
   constructor(
     private deps: {
       store: ScriptStore;
-      sessions: SessionManager;
+      sessions: Pick<
+        SessionManager,
+        "call" | "status" | "reset" | "dispose"
+      >;
       getSettings(): Settings;
       emitRun(e: ScriptRunEvent): void;
     },
