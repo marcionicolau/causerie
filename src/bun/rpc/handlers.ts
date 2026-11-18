@@ -43,7 +43,7 @@ import { ScriptService } from "../scripts/service";
 import { ScriptStore } from "../scripts/store";
 import { SessionManager } from "../scripts/session";
 import { SubprocessBackend } from "../scripts/backends/subprocess";
-import { EmbeddedBackend } from "../scripts/backends/embedded";
+import { HostBackend } from "../scripts/backends/host";
 import { resolveInterpreter } from "../scripts/runtimes";
 import { modelsDir, scanModels } from "../models/library";
 import {
@@ -290,8 +290,8 @@ export function createRequestHandlers(deps: HandlerDeps) {
         store: new ScriptStore(),
         sessions: new SessionManager({
           backendFactory: () =>
-            scriptsSvc!.policy().backend === "embedded"
-              ? new EmbeddedBackend()
+            scriptsSvc!.policy().backend === "host"
+              ? new HostBackend()
               : new SubprocessBackend(),
           emit: (e) => deps.emit("session.state", e),
         }),
@@ -1707,7 +1707,7 @@ export function createRequestHandlers(deps: HandlerDeps) {
           merged.backend !== undefined &&
           merged.backend !== "auto" &&
           merged.backend !== "subprocess" &&
-          merged.backend !== "embedded"
+          merged.backend !== "host"
         ) {
           fail("INVALID_PARAMS", `unknown script backend: ${merged.backend}`);
         }

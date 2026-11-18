@@ -50,6 +50,7 @@ class FakeBackend implements ScriptBackend {
       });
     }
     return {
+      outcome: "ok",
       exitStatus: 0,
       stdout: `call-${this.calls}`,
       stderr: "",
@@ -73,7 +74,7 @@ class FakeBackend implements ScriptBackend {
 
 const req = (over: Partial<ScriptCallRequest> = {}): ScriptCallRequest => ({
   runId: "r1",
-  code: "x",
+  path: "/tmp/x.py",
   args: {},
   cwd: "/tmp",
   timeoutMs: 5000,

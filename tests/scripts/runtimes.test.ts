@@ -68,6 +68,7 @@ class FlakyBackend implements ScriptBackend {
       throw new BackendUnavailable("session-dead", "boom");
     }
     return {
+      outcome: "ok",
       exitStatus: 0, stdout: "", stderr: "",
       durationMs: 1, files: [], sessionRestarted: false,
     };
@@ -85,7 +86,7 @@ class FlakyBackend implements ScriptBackend {
 }
 
 const REQ: ScriptCallRequest = {
-  runId: "r1", code: "x", args: {}, cwd: dir, timeoutMs: 5000,
+  runId: "r1", path: "/tmp/x.py", args: {}, cwd: dir, timeoutMs: 5000,
 };
 
 describe("session lifecycle + events", () => {

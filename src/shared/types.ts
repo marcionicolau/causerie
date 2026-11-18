@@ -408,6 +408,9 @@ export interface AuditEntry {
   // feature 027 (FR-022): script source origin + path at run time
   origin?: "linked" | "stored";
   sourcePath?: string;
+  // feature 028 (FR-014): which backend ran it + fallback reason
+  method?: "host" | "subprocess";
+  methodReason?: string;
 }
 
 // ---- feature 023: python & r script calling ----
@@ -476,6 +479,19 @@ export type ScriptRunVerdict =
   | "refused"
   | "interrupted";
 
+// feature 028: run outcomes — wire enum from contracts/protocol.md
+export type ScriptOutcome =
+  | "ok"
+  | "error"
+  | "interrupted"
+  | "timeout"
+  | "source_missing"
+  | "content_changed"
+  | "host_fault";
+
+// which mechanism ran the script + why it was chosen (fallback reason)
+export type ScriptRunMethod = "host" | "subprocess";
+
 export interface ScriptRunRecord {
   runId: string; // also names dataDir()/script-runs/<runId>/
   script: string;
@@ -487,6 +503,11 @@ export interface ScriptRunRecord {
   durationMs: number;
   files: string[]; // produced inside the run workdir
   sessionRestarted: boolean;
+  // feature 028
+  outcome?: ScriptOutcome;
+  contentSha256?: string; // hash of the exact bytes executed
+  method?: ScriptRunMethod;
+  methodReason?: string; // e.g. "python-3.11", "no-libpython", "version-mismatch"
 }
 
 // script.run progress event (manual runs + queued state)
@@ -505,7 +526,9 @@ export interface SessionStateEvent {
 
 export type ScriptMode = "ask" | "allow-session" | "deny";
 
-export type ScriptBackendKind = "auto" | "subprocess" | "embedded";
+// feature 028: "host" = cz-host process + dlopen'd ABI module; stored
+// "embedded" values migrate to "auto" on settings load (T016)
+export type ScriptBackendKind = "auto" | "host" | "subprocess";
 
 export interface ScriptPolicy {
   mode: ScriptMode; // default "deny" — opt-in like tools

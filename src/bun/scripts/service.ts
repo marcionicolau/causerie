@@ -536,11 +536,18 @@ export class ScriptService {
       this.deps.emitRun({ runId, script: entry.id, phase: "queued" });
       this.deps.emitRun({ runId, script: entry.id, phase: "running" });
     }
+    // feature 028 (T004): backends read the file themselves; the approved
+    // baseline travels as expectedFingerprint (host-side content_changed)
+    const scriptPath =
+      entry.source.kind === "external"
+        ? (normalizeSourcePath(entry.source.path) ?? entry.source.path)
+        : this.deps.store.sourcePath(entry);
     const started = Date.now();
     try {
       const r = await this.deps.sessions.call(entry.runtime, interpreter, {
         runId,
-        code,
+        path: scriptPath,
+        expectedFingerprint: entry.approvedFingerprint,
         args,
         input,
         cwd,
@@ -550,13 +557,22 @@ export class ScriptService {
         runId,
         script: entry.id,
         initiator: opts.initiator,
-        verdict: r.exitStatus === 0 ? "executed" : "error",
+        verdict:
+          r.outcome === "ok"
+            ? "executed"
+            : r.outcome === "interrupted" || r.outcome === "timeout"
+              ? r.outcome
+              : "error",
         exitStatus: r.exitStatus,
         stdout: cap(r.stdout),
         stderr: cap(r.stderr),
         durationMs: r.durationMs,
         files: r.files,
         sessionRestarted: r.sessionRestarted,
+        outcome: r.outcome,
+        contentSha256: r.contentSha256,
+        method: r.method,
+        methodReason: r.methodReason,
       };
       this.audit(opts, rec, started);
       if (opts.emitRun) {
@@ -638,6 +654,9 @@ export class ScriptService {
       origin: opts.entry.source.kind === "external" ? "linked" : "stored",
       sourcePath:
         opts.entry.source.kind === "external" ? opts.entry.source.path : undefined,
+      // feature 028 (FR-014)
+      method: rec.method,
+      methodReason: rec.methodReason,
     });
   }
 
