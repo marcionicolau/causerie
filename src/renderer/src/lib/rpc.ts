@@ -13,31 +13,40 @@ function dispatch<M extends keyof Events>(method: M, payload: Events[M]) {
   listeners.get(method)?.forEach((h) => h(payload));
 }
 
+// Mapped over every schema event so a missing entry is a compile error —
+// issue #58 was exactly that: "setup.status" was never dispatched and the
+// first-run modal stayed frozen on the initial query.
+const messageHandlers: {
+  [M in keyof Events]: (payload: Events[M]) => void;
+} = {
+  "chat.token": (p) => dispatch("chat.token", p),
+  "chat.done": (p) => dispatch("chat.done", p),
+  "chat.error": (p) => dispatch("chat.error", p),
+  "model.progress": (p) => dispatch("model.progress", p),
+  "model.download": (p) => dispatch("model.download", p),
+  "chat.warning": (p) => dispatch("chat.warning", p),
+  "chat.phase": (p) => dispatch("chat.phase", p),
+  "role.changed": (p) => dispatch("role.changed", p),
+  "metrics.entry": (p) => dispatch("metrics.entry", p),
+  "tool.update": (p) => dispatch("tool.update", p),
+  // feature 023
+  "script.run": (p) => dispatch("script.run", p),
+  "session.state": (p) => dispatch("session.state", p),
+  "extension.changed": (p) => dispatch("extension.changed", p),
+  "run.event": (p) => dispatch("run.event", p),
+  "run.status": (p) => dispatch("run.status", p),
+  "view.error": (p) => dispatch("view.error", p),
+  "update.status": (p) => dispatch("update.status", p),
+  // feature 022
+  "setup.status": (p) => dispatch("setup.status", p),
+};
+
 export const rpc = Electroview.defineRPC<ChatRpcSchema>({
   // Electrobun default is 1s — too short for any real work (downloads,
   // pack installs). Dialog-bound calls pass Infinity per request.
   maxRequestTime: 30_000,
   handlers: {
-    messages: {
-      "chat.token": (p) => dispatch("chat.token", p),
-      "chat.done": (p) => dispatch("chat.done", p),
-      "chat.error": (p) => dispatch("chat.error", p),
-      "model.progress": (p) => dispatch("model.progress", p),
-      "model.download": (p) => dispatch("model.download", p),
-      "chat.warning": (p) => dispatch("chat.warning", p),
-      "chat.phase": (p) => dispatch("chat.phase", p),
-      "role.changed": (p) => dispatch("role.changed", p),
-      "metrics.entry": (p) => dispatch("metrics.entry", p),
-      "tool.update": (p) => dispatch("tool.update", p),
-      // feature 023
-      "script.run": (p) => dispatch("script.run", p),
-      "session.state": (p) => dispatch("session.state", p),
-      "extension.changed": (p) => dispatch("extension.changed", p),
-      "run.event": (p) => dispatch("run.event", p),
-      "run.status": (p) => dispatch("run.status", p),
-      "view.error": (p) => dispatch("view.error", p),
-      "update.status": (p) => dispatch("update.status", p),
-    },
+    messages: messageHandlers,
     requests: {},
   },
 });
