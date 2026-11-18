@@ -13,6 +13,9 @@ Local-first AI chat desktop app — an [Electrobun](https://electrobun.dev) 2.x 
 `bun:ffi`. No cloud calls: models are local GGUF files, conversations and
 settings are local JSON.
 
+> **Causerie** (French, *koz-REE*) — an informal conversation or chat; also a
+> short, conversational essay.
+
 <!-- screenshots -->
 
 ## Features
