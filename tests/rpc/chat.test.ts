@@ -26,6 +26,7 @@ function makeDeps(opts: {
   let stopped = false;
   let lastParams: unknown = null;
   let lastPrompt = "";
+  let genError = opts.genError; // fired once — later generates succeed
 
   const engine: EngineLike = {
     status: () => ({
@@ -55,7 +56,11 @@ function makeDeps(opts: {
         await new Promise((r) => setTimeout(r, 0));
       }
       generating = false;
-      if (opts.genError) throw opts.genError;
+      if (genError) {
+        const e = genError;
+        genError = undefined;
+        throw e;
+      }
       return {
         status: stopped ? "partial" : (opts.genResult ?? "complete"),
         tokens,
@@ -322,6 +327,50 @@ describe("chat.regenerate / chat.edit contract", () => {
     } catch (e) {
       expect((e as EngineError).code).toBe("EMPTY_MESSAGE");
     }
+  });
+});
+
+
+describe("mid-stream engine failure (issue #50)", () => {
+  test("emitted tokens stay persisted with status failed + chat.error", async () => {
+    const { deps, emitted, convs } = makeDeps({
+      tokens: ["partial-", "text-", "here"],
+      genError: new EngineError("ENGINE_ERROR", "decode blew up"),
+    });
+    const h = createRequestHandlers(deps);
+    const { messageId } = h["chat.send"]({ conversationId: CONV, content: "Hi" });
+    await flush();
+
+    const assistant = convs.get(CONV)!.messages.at(-1)!;
+    expect(assistant.id).toBe(messageId);
+    expect(assistant.status).toBe("failed");
+    expect(assistant.content).toBe("partial-text-here");
+    expect(assistant.completedAt).not.toBeNull();
+
+    const methods = emitted.map((e) => e.method);
+    expect(methods).toContain("chat.token");
+    expect(methods).toContain("chat.error");
+    expect(methods).not.toContain("chat.done");
+  });
+
+  test("failed turn is excluded from the next prompt's history", async () => {
+    const { deps, convs, getLastPrompt } = makeDeps({
+      tokens: ["FAILED-MARKER"],
+      genError: new EngineError("ENGINE_ERROR", "boom"),
+    });
+    const h = createRequestHandlers(deps);
+    h["chat.send"]({ conversationId: CONV, content: "Hi" });
+    await flush();
+
+    // next turn on the same conversation
+    h["chat.send"]({ conversationId: CONV, content: "again" });
+    await flush();
+
+    const prompt = getLastPrompt();
+    expect(prompt).toContain("Hi"); // prior user turn is complete -> kept
+    expect(prompt).toContain("again");
+    expect(prompt).not.toContain("FAILED-MARKER");
+    expect(convs.get(CONV)!.messages.filter((m) => m.status === "failed")).toHaveLength(1);
   });
 });
 

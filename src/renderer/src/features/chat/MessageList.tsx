@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Trace, TraceCollapsible, TraceBadge } from "@/components/ui/trace";
 import { Message, MessageContent, MessageToolbar } from "@/components/ai/message";
 import { MessageActions } from "@/components/ai/message-actions";
+import { canRegenerateMessage } from "./message-rules";
 import { ToolSegments } from "./ToolCallCard";
 import { VariantNav } from "./VariantNav";
 import { cn } from "@/lib/utils";
@@ -258,11 +259,7 @@ export function MessageList({
                 {canAct && editingId !== m.id && (
                   <MessageActions
                     content={m.content}
-                    canRegenerate={
-                      m.role === "assistant" &&
-                      isLast &&
-                      (m.status === "complete" || m.status === "partial")
-                    }
+                    canRegenerate={canRegenerateMessage(m, isLast)}
                     canEdit={m.role === "user" && m.status === "complete"}
                     onRegenerate={() => onRegenerate(m.id)}
                     onEdit={() => {
