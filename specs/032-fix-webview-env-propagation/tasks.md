@@ -72,10 +72,10 @@ description: "Task list for fix webview env propagation (#55)"
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [X] T011 Run gates: `bun run typecheck`, `bun run lint`, `bun test ./tests` (scoped) and fix anything this change introduced
+- [X] T011 Run gates: `bun run typecheck`, `bun run lint`, `bun run build:renderer` (constitution requires `vite build`), `bun test ./tests` (scoped) and fix anything this change introduced
 - [X] T012 [P] Re-read `README.md` (env table row for `WEBKIT_DISABLE_DMABUF_RENDERER` and the "Blank window on Linux (NVIDIA + Wayland)" troubleshooting entry) and adjust wording only if inaccurate (FR-008); also mention that on non-glibc systems the automatic workaround is not applied and the manual variable is needed
 - [X] T013 [P] Update the AGENTS.md note for this area, if one exists, to say the workaround writes both `process.env` and the C environment (Bun `process.env` is not libc `environ`). Add a short gotcha line near the "bun:ffi NULL returns" gotcha
-- [ ] T014 Manual: build a packaged canary (`bun run package`), launch with `env -u WEBKIT_DISABLE_DMABUF_RENDERER` and a fresh `APP_DATA_DIR` on an NVIDIA + Wayland machine, confirm UI paints and no `Failed to create GBM buffer` (quickstart.md, steps 1-3). Then repeat with the variable preset to `0` (step 4)
+- [ ] T014 Manual: build a packaged canary (`bun run package`), launch with `env -u WEBKIT_DISABLE_DMABUF_RENDERER` and a fresh `APP_DATA_DIR` on an NVIDIA + Wayland machine, confirm UI paints and no `Failed to create GBM buffer` on 3 consecutive cold launches (quickstart.md, steps 1-3). Then repeat with the variable preset to `0` (step 4)
 - [ ] T015 Post results (machine, GPU, driver, distro) on issue #55 and PR #60, ask for a second machine, and close #55 only after confirmation (FR-007)
 
 ---

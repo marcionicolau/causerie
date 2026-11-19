@@ -37,7 +37,7 @@ The #57 workaround set `WEBKIT_DISABLE_DMABUF_RENDERER` only through Bun's `proc
 | III Strict TS & typed FFI | Pass, typed `NativeSetenv`; FFI signature declared; return value validated (`=== 0`); failure caught. |
 | IV/V Components / Vite | N/A |
 | VI Minimal dependencies | Pass, no new dependency; `bun:ffi` is built in |
-| Quality gates (tsc, lint, FFI path tested) | To run in tasks: `bun run typecheck`, `bun run lint`, scoped tests |
+| Quality gates (tsc, lint, FFI path tested) | To run in tasks: `bun run typecheck`, `bun run lint`, `bun run build:renderer` (vite build), scoped tests |
 
 Re-check after design: no change, still passes.
 

@@ -83,7 +83,7 @@ On macOS, Windows, X11 sessions, non-NVIDIA Linux, or a Linux where the native e
 
 ### Measurable Outcomes
 
-- **SC-001**: On a verified NVIDIA + Wayland machine, 100% of cold launches of the packaged build show a rendered UI with no external environment variable set.
+- **SC-001**: On a verified NVIDIA + Wayland machine, all of 3 consecutive cold launches of the packaged build show a rendered UI with no external environment variable set.
 - **SC-002**: Tests fail if the workaround reaches only the runtime env object and not the process-level one (the #57 regression is detectable).
 - **SC-003**: Existing user-set values are preserved in 100% of tested cases.
 - **SC-004**: Zero startup failures across non-matching platforms/sessions and simulated native-write failure cases.

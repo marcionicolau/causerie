@@ -141,6 +141,17 @@ describe("applyLinuxWebviewEnv", () => {
     },
   );
 
+  test("running twice is idempotent", () => {
+    const env: NodeJS.ProcessEnv = { ...wayland };
+    const calls: [string, string][] = [];
+    const native = (n: string, v: string) => (calls.push([n, v]), true);
+    expect(applyLinuxWebviewEnv(env, native, probe)).toBe(true);
+    // second run sees the variable already set, so it must not touch anything
+    expect(applyLinuxWebviewEnv(env, native, probe)).toBe(false);
+    expect(env.WEBKIT_DISABLE_DMABUF_RENDERER).toBe("1");
+    expect(calls).toEqual([["WEBKIT_DISABLE_DMABUF_RENDERER", "1"]]);
+  });
+
   test("a failing native setenv does not break startup and warns once", () => {
     const env: NodeJS.ProcessEnv = { ...wayland };
     const warn = spyOn(console, "warn").mockImplementation(() => {});
@@ -229,14 +240,7 @@ describe.skipIf(process.platform !== "linux")("applyLinuxWebviewEnv (real libc)"
 
 // The reason for the native call (issue #55): Bun's process.env is not libc's environ.
 describe.skipIf(process.platform !== "linux")("libcSetenv (real libc)", () => {
-  const getenv = (name: string): string | null => {
-    const { dlopen, FFIType, CString } = require("bun:ffi") as typeof import("bun:ffi");
-    const libc = dlopen("libc.so.6", {
-      getenv: { args: [FFIType.cstring], returns: FFIType.ptr },
-    });
-    const p = libc.symbols.getenv(Buffer.from(`${name}\0`));
-    return p ? String(new CString(p)) : null;
-  };
+  const getenv = (name: string): string | null => libcEnv().get(name);
 
   test("a process.env assignment alone is invisible to getenv", () => {
     process.env.CZ_TEST_ONLY_PROCESS_ENV = "x";
