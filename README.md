@@ -156,7 +156,8 @@ fails to allocate GBM buffers on some NVIDIA/Wayland setups
 (`Failed to create GBM buffer` in the log; window shows a title bar and an
 empty body). The app detects this combination and sets
 `WEBKIT_DISABLE_DMABUF_RENDERER=1` automatically. If you still see a blank
-window, launch with the variable set explicitly:
+window, launch with the variable set explicitly (the automatic workaround
+needs glibc; on musl-based systems set it manually):
 
 ```sh
 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./bin/launcher

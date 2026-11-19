@@ -65,7 +65,17 @@ export function applyLinuxWebviewEnv(
   });
   if (ok) {
     env.WEBKIT_DISABLE_DMABUF_RENDERER = "1";
-    native("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    let nativeOk = false;
+    try {
+      nativeOk = native("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    } catch {
+      nativeOk = false;
+    }
+    if (!nativeOk) {
+      console.warn(
+        "[linux-webkit-env] native setenv failed; WEBKIT_DISABLE_DMABUF_RENDERER only set in process.env",
+      );
+    }
   }
   return ok;
 }

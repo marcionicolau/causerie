@@ -1,5 +1,5 @@
 // issue #55: dmabuf-renderer workaround predicate for NVIDIA + Wayland
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import {
   applyLinuxWebviewEnv,
   libcSetenv,
@@ -9,6 +9,24 @@ import {
 const wayland = { WAYLAND_DISPLAY: "wayland-1" };
 const nvidia = () => true;
 const noNvidia = () => false;
+
+// Reads the real C environment (what WebKitGTK sees), unlike process.env.
+const libcEnv = () => {
+  const { dlopen, FFIType, CString } = require("bun:ffi") as typeof import("bun:ffi");
+  const libc = dlopen("libc.so.6", {
+    getenv: { args: [FFIType.cstring], returns: FFIType.ptr },
+    unsetenv: { args: [FFIType.cstring], returns: FFIType.i32 },
+  });
+  return {
+    get(name: string): string | null {
+      const p = libc.symbols.getenv(Buffer.from(`${name}\0`));
+      return p ? String(new CString(p)) : null;
+    },
+    unset(name: string): void {
+      libc.symbols.unsetenv(Buffer.from(`${name}\0`));
+    },
+  };
+};
 
 describe("needsDmabufWorkaround", () => {
   test("linux + wayland + nvidia → true", () => {
@@ -107,10 +125,105 @@ describe("applyLinuxWebviewEnv", () => {
     expect(calls).toEqual([]);
   });
 
-  test("a failing native setenv does not break startup", () => {
+  test.each(["0", "1", ""])(
+    "preset value %p is left alone in both environments",
+    (value) => {
+      const env: NodeJS.ProcessEnv = {
+        ...wayland,
+        WEBKIT_DISABLE_DMABUF_RENDERER: value,
+      };
+      const calls: [string, string][] = [];
+      expect(
+        applyLinuxWebviewEnv(env, (n, v) => (calls.push([n, v]), true), probe),
+      ).toBe(false);
+      expect(env.WEBKIT_DISABLE_DMABUF_RENDERER).toBe(value);
+      expect(calls).toEqual([]);
+    },
+  );
+
+  test("a failing native setenv does not break startup and warns once", () => {
     const env: NodeJS.ProcessEnv = { ...wayland };
-    expect(applyLinuxWebviewEnv(env, () => false, probe)).toBe(true);
-    expect(env.WEBKIT_DISABLE_DMABUF_RENDERER).toBe("1");
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(applyLinuxWebviewEnv(env, () => false, probe)).toBe(true);
+      expect(env.WEBKIT_DISABLE_DMABUF_RENDERER).toBe("1");
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain(
+        "native setenv failed",
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test("a throwing native setenv does not propagate", () => {
+    const env: NodeJS.ProcessEnv = { ...wayland };
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const boom = () => {
+        throw new Error("dlopen failed");
+      };
+      expect(applyLinuxWebviewEnv(env, boom, probe)).toBe(true);
+      expect(env.WEBKIT_DISABLE_DMABUF_RENDERER).toBe("1");
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test.each(["darwin", "win32"])(
+    "%s: native setter never called and no warning",
+    (platform) => {
+      const env: NodeJS.ProcessEnv = { ...wayland };
+      const calls: [string, string][] = [];
+      const warn = spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        expect(
+          applyLinuxWebviewEnv(env, (n, v) => (calls.push([n, v]), true), {
+            platform,
+            moduleLoaded: nvidia,
+          }),
+        ).toBe(false);
+        expect(calls).toEqual([]);
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    },
+  );
+});
+
+// Issue #55 end to end: the variable must reach the C environment (getenv),
+// not only process.env.
+describe.skipIf(process.platform !== "linux")("applyLinuxWebviewEnv (real libc)", () => {
+  const NAME = "WEBKIT_DISABLE_DMABUF_RENDERER";
+  const probe = { platform: "linux", moduleLoaded: nvidia };
+
+  test("real libcSetenv exposes WEBKIT_DISABLE_DMABUF_RENDERER=1 to getenv", () => {
+    const c = libcEnv();
+    c.unset(NAME);
+    try {
+      expect(c.get(NAME)).toBeNull();
+      expect(applyLinuxWebviewEnv({ ...wayland }, libcSetenv, probe)).toBe(true);
+      expect(c.get(NAME)).toBe("1");
+    } finally {
+      c.unset(NAME);
+    }
+  });
+
+  test("regression #57: a no-op native setter leaves getenv empty", () => {
+    const c = libcEnv();
+    c.unset(NAME);
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const env: NodeJS.ProcessEnv = { ...wayland };
+      applyLinuxWebviewEnv(env, () => false, probe);
+      expect(env[NAME]).toBe("1");
+      expect(c.get(NAME)).toBeNull();
+    } finally {
+      warn.mockRestore();
+      c.unset(NAME);
+    }
   });
 });
 
