@@ -659,6 +659,12 @@ draft-side; `MessageList` renders `Message.attachments` chips (`·trunc` /
 Gotcha: bun:ffi NULL returns are `null`, not `0` — always test truthiness
 (`if (model)`), never `!== 0`.
 
+Gotcha: Bun's `process.env` writes never reach libc `environ`, so native
+libraries (WebKitGTK) can't see them. `linux-webkit-env.ts` sets
+`WEBKIT_DISABLE_DMABUF_RENDERER` in both `process.env` and the C env
+(`setenv` via `bun:ffi`); tests must read back through libc `getenv`
+(issue #55).
+
 ## Feature 030 — configurable context size
 
 - `llama/context-size.ts` — pure resolver: `DEFAULT=4096`, bounds
